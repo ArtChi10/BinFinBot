@@ -142,14 +142,99 @@ async def get_user_settings(
     )
 
 
+async def update_user_timeframe(
+    database_path: str,
+    telegram_user_id: int,
+    timeframe: str,
+) -> UserSettings:
+    await ensure_user_settings(database_path, telegram_user_id)
+    await _update_user_settings(
+        database_path,
+        telegram_user_id,
+        "timeframe = ?",
+        (timeframe,),
+    )
+    return await _get_existing_user_settings(database_path, telegram_user_id)
+
+
+async def update_user_rsi_range(
+    database_path: str,
+    telegram_user_id: int,
+    rsi_min: int,
+    rsi_max: int,
+) -> UserSettings:
+    await ensure_user_settings(database_path, telegram_user_id)
+    await _update_user_settings(
+        database_path,
+        telegram_user_id,
+        "rsi_min = ?, rsi_max = ?",
+        (rsi_min, rsi_max),
+    )
+    return await _get_existing_user_settings(database_path, telegram_user_id)
+
+
+async def update_user_volume_change_percent(
+    database_path: str,
+    telegram_user_id: int,
+    volume_change_percent: float,
+) -> UserSettings:
+    await ensure_user_settings(database_path, telegram_user_id)
+    await _update_user_settings(
+        database_path,
+        telegram_user_id,
+        "volume_change_percent = ?",
+        (volume_change_percent,),
+    )
+    return await _get_existing_user_settings(database_path, telegram_user_id)
+
+
+async def toggle_user_notifications(
+    database_path: str,
+    telegram_user_id: int,
+) -> UserSettings:
+    settings = await ensure_user_settings(database_path, telegram_user_id)
+    await _update_user_settings(
+        database_path,
+        telegram_user_id,
+        "notifications_enabled = ?",
+        (int(not settings.notifications_enabled),),
+    )
+    return await _get_existing_user_settings(database_path, telegram_user_id)
+
+
+async def _update_user_settings(
+    database_path: str,
+    telegram_user_id: int,
+    set_clause: str,
+    values: tuple[object, ...],
+) -> None:
+    async with aiosqlite.connect(database_path) as db:
+        await db.execute(
+            f"UPDATE user_settings SET {set_clause} WHERE telegram_user_id = ?",
+            (*values, telegram_user_id),
+        )
+        await db.commit()
+
+
+async def _get_existing_user_settings(
+    database_path: str,
+    telegram_user_id: int,
+) -> UserSettings:
+    settings = await get_user_settings(database_path, telegram_user_id)
+    if settings is None:
+        raise RuntimeError("User settings were not found after update.")
+    return settings
+
+
 def format_user_settings(settings: UserSettings) -> str:
     notifications = "включены" if settings.notifications_enabled else "выключены"
+    exchange = settings.exchange.capitalize()
 
     return (
-        "Текущие настройки:\n"
-        f"Биржа: {settings.exchange}\n"
+        "Текущие настройки\n\n"
+        f"Биржа: {exchange}\n"
         f"Таймфрейм: {settings.timeframe}\n"
-        f"Изменение объема: {settings.volume_change_percent:g}%\n"
-        f"RSI: {settings.rsi_min}-{settings.rsi_max}\n"
+        f"Минимальный рост объема: {settings.volume_change_percent:g}%\n"
+        f"RSI: {settings.rsi_min}–{settings.rsi_max}\n"
         f"Уведомления: {notifications}"
     )
