@@ -1,0 +1,6 @@
+aiogram>=3.4
+python-dotenv>=1.0
+aiosqlite>=0.19
+ccxt>=4.0
+pandas>=2.0
+ta>=0.11

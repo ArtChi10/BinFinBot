@@ -1,0 +1,58 @@
+# Crypto Screener Telegram Bot
+
+Базовый каркас Telegram-бота для MVP криптовалютного скринера. На этом этапе проект умеет загружать настройки из `.env`, инициализировать SQLite и показывать пользовательские настройки через команды Telegram.
+
+## Назначение
+
+Проект готовит основу для бота, который будет искать криптовалютные пары по простым условиям скринера: биржа, таймфрейм, изменение объема, диапазон RSI и включенные уведомления.
+
+## Установка
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+## Настройка окружения
+
+Создайте локальный `.env` на основе `.env.example`:
+
+```text
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+DATABASE_PATH=bot.sqlite3
+```
+
+Реальные токены нельзя хранить в репозитории. Файл `.env` добавлен в `.gitignore`.
+
+## Запуск
+
+```powershell
+python -m src.bot.main
+```
+
+При запуске бот автоматически создает SQLite-базу по пути `DATABASE_PATH` и таблицу `user_settings`.
+
+## MVP
+
+Текущий MVP включает:
+
+- загрузку конфигурации из `.env`;
+- автоматическую инициализацию SQLite;
+- таблицу `user_settings`;
+- команду `/start`, которая создает настройки пользователя по умолчанию;
+- команду `/settings`, которая показывает текущие настройки;
+- inline-клавиатуру-заглушку для будущего изменения настроек.
+
+## Настройки по умолчанию
+
+```text
+exchange: bybit
+timeframe: 15m
+volume_change_percent: 0.5
+rsi_min: 60
+rsi_max: 80
+notifications_enabled: true
+```
+
+Важно: значение `0.5` для `volume_change_percent` означает `0.5%`, а не `50%`.
