@@ -55,6 +55,16 @@ python -m src.bot.main
 - минимальный рост объема: `0.5%`, `1%`, `3%`, `5%`, `10%`;
 - уведомления: включены или выключены.
 
+## Проверка Bybit market data
+
+Проект содержит smoke-скрипт для проверки реальных данных Bybit через `ccxt`. Telegram token для этой проверки не нужен.
+
+```powershell
+python scripts\check_bybit_market_data.py --limit 10 --timeframe 15m --ohlcv-limit 50
+```
+
+Скрипт получает топ spot `/USDT` пар Bybit по 24h quote volume, выводит список пар, берет первую пару и запрашивает для нее OHLCV-свечи. На этом этапе данные не сохраняются в SQLite и торговые сигналы в Telegram не отправляются.
+
 ## Настройки по умолчанию
 
 ```text
