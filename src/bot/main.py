@@ -28,11 +28,11 @@ async def main() -> None:
             "TELEGRAM_BOT_TOKEN is not set. Copy .env.example to .env and fill it."
         )
 
-    await init_db(config.database_path)
+    await init_db(config.database_url)
 
     bot = Bot(token=config.telegram_bot_token, session=create_bot_session())
     dispatcher = Dispatcher()
-    dispatcher["database_path"] = config.database_path
+    dispatcher["database_path"] = config.database_url
     dispatcher.include_router(router)
 
     monitor_task: asyncio.Task[None] | None = None
@@ -40,7 +40,7 @@ async def main() -> None:
         await bot.set_my_commands(bot_commands())
         await bot.delete_webhook(drop_pending_updates=True)
         monitor_task = asyncio.create_task(
-            run_market_monitor(bot, config.database_path),
+            run_market_monitor(bot, config.database_url),
             name="market-monitor",
         )
         await dispatcher.start_polling(bot)

@@ -27,14 +27,19 @@ cp .env.example .env
 nano .env
 ```
 
-Fill only secrets and local runtime settings:
+Fill secrets and Postgres settings:
 
 ```text
 TELEGRAM_BOT_TOKEN=your_real_telegram_bot_token
-DATABASE_PATH=/app/data/bot.sqlite3
+POSTGRES_DB=binfinbot
+POSTGRES_USER=binfinbot
+POSTGRES_PASSWORD=use_a_long_random_password
 ```
 
-Start the bot:
+`DATABASE_URL` is assembled by `docker-compose.yml` for the bot container.
+Use a URL-safe password for `POSTGRES_PASSWORD` or URL-encode special characters.
+
+Start Postgres and the bot:
 
 ```bash
 docker compose up -d --build
@@ -44,6 +49,12 @@ Check logs:
 
 ```bash
 docker compose logs -f bot
+```
+
+Check Postgres logs:
+
+```bash
+docker compose logs -f postgres
 ```
 
 Open Telegram and send:
@@ -64,6 +75,12 @@ Restart:
 
 ```bash
 docker compose restart bot
+```
+
+Restart the full stack:
+
+```bash
+docker compose restart
 ```
 
 Show status:
@@ -90,22 +107,27 @@ docker compose logs -f bot
 
 ## Data
 
-SQLite is stored on the server in:
+Postgres data is stored in the Docker volume:
 
 ```text
-./data/bot.sqlite3
-```
-
-This file is ignored by git and mounted into the container as:
-
-```text
-/app/data/bot.sqlite3
+binfinbot_postgres_data
 ```
 
 Backup example:
 
 ```bash
-cp data/bot.sqlite3 "data/bot.sqlite3.$(date +%Y%m%d_%H%M%S).bak"
+docker compose exec -T postgres pg_dump \
+  -U "$POSTGRES_USER" \
+  -d "$POSTGRES_DB" \
+  > "binfinbot_$(date +%Y%m%d_%H%M%S).sql"
+```
+
+Restore example:
+
+```bash
+cat backup.sql | docker compose exec -T postgres psql \
+  -U "$POSTGRES_USER" \
+  -d "$POSTGRES_DB"
 ```
 
 ## Network Checks
@@ -117,9 +139,16 @@ docker compose run --rm bot python -c "import socket; print(socket.getaddrinfo('
 docker compose run --rm bot python scripts/check_bybit_market_data.py --limit 5 --timeframe 5m --ohlcv-limit 20
 ```
 
+Check that the bot can reach Postgres:
+
+```bash
+docker compose run --rm bot python -c "from src.bot.config import load_config; print(load_config().database_url)"
+docker compose exec postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```
+
 ## Notes
 
 - Do not commit `.env`.
-- Do not commit `data/bot.sqlite3`.
 - The bot does not expose HTTP ports.
 - `restart: unless-stopped` keeps the bot running after crashes or server reboot.
+- Local development can still use `DATABASE_PATH=bot.sqlite3` without Postgres.

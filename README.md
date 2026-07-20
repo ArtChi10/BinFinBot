@@ -21,6 +21,10 @@ pip install -r requirements.txt
 ```text
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 DATABASE_PATH=bot.sqlite3
+DATABASE_URL=
+POSTGRES_DB=binfinbot
+POSTGRES_USER=binfinbot
+POSTGRES_PASSWORD=change_me
 ```
 
 Реальные токены нельзя хранить в репозитории. Файл `.env` добавлен в `.gitignore`.
@@ -31,7 +35,7 @@ DATABASE_PATH=bot.sqlite3
 python -m src.bot.main
 ```
 
-При запуске бот автоматически создает SQLite-базу по пути `DATABASE_PATH`, таблицы `user_settings`, `user_popular_pair_selections` и `signal_cooldowns`.
+Локально бот может использовать SQLite по пути `DATABASE_PATH`. Если задан `DATABASE_URL`, бот использует Postgres. При запуске бот автоматически создает таблицы `user_settings`, `user_popular_pair_selections` и `signal_cooldowns`.
 
 После запуска бот регистрирует команды Telegram:
 
@@ -52,6 +56,8 @@ python -m src.bot.main
 docker compose up -d --build
 docker compose logs -f bot
 ```
+
+Compose поднимает Postgres и передает боту `DATABASE_URL`.
 
 Подробная инструкция: [docs/deployment.md](docs/deployment.md).
 
