@@ -119,7 +119,10 @@ def pair_universe_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=_selected_label(label, pair_universe == current_pair_universe),
+                    text=_pair_universe_button_label(
+                        label,
+                        selected=pair_universe == current_pair_universe,
+                    ),
                     callback_data=f"{PAIR_UNIVERSE_VALUE_PREFIX}{pair_universe}",
                 )
             ]
@@ -134,13 +137,13 @@ def pair_universe_keyboard(
             ]
         ]
         + [_back_row()],
-    )
+)
 
 
-def _selected_label(label: str, selected: bool) -> str:
+def _pair_universe_button_label(label: str, selected: bool) -> str:
     if selected:
-        return f"[x] {label}"
-    return label
+        return f"Активно: {label}"
+    return f"Выбрать: {label}"
 
 
 def popular_pairs_keyboard(

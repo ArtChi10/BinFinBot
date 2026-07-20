@@ -3,7 +3,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from src.bot.database import ensure_user_settings, get_user_settings, init_db
-from src.bot.handlers import _activate_popular_30_universe
+from src.bot.handlers import (
+    _activate_popular_30_universe,
+    _format_pair_universe_menu_text,
+)
 from src.market.universes import PAIR_UNIVERSE_POPULAR_30, PAIR_UNIVERSE_TOP_150
 
 
@@ -32,6 +35,20 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(activated_settings.pair_universe, PAIR_UNIVERSE_POPULAR_30)
         self.assertIsNotNone(saved_settings)
         self.assertEqual(saved_settings.pair_universe, PAIR_UNIVERSE_POPULAR_30)
+
+    async def test_pair_universe_menu_text_shows_persisted_selection(self) -> None:
+        settings = await _activate_popular_30_universe(
+            self.database_path,
+            telegram_user_id=123,
+        )
+
+        text = _format_pair_universe_menu_text(
+            settings,
+            selected_popular_pairs_count=7,
+        )
+
+        self.assertIn("Сейчас закреплено: Популярные 30", text)
+        self.assertIn("Популярные 30: выбрано 7/30", text)
 
 
 if __name__ == "__main__":

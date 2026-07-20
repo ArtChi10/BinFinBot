@@ -45,8 +45,8 @@ class KeyboardTests(unittest.TestCase):
             for button in row
         ]
 
-        self.assertIn("[x] Популярные 30", button_texts)
-        self.assertIn("Топ-150 по объему", button_texts)
+        self.assertIn("Активно: Популярные 30", button_texts)
+        self.assertIn("Выбрать: Топ-150 по объему", button_texts)
 
 
 if __name__ == "__main__":

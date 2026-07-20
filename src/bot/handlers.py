@@ -146,14 +146,19 @@ async def _edit_pair_universe_message(
         callback.from_user.id,
     )
     selected_count = sum(selections.values())
-    await _edit_settings_message(
-        callback,
-        settings,
-        pair_universe_keyboard(
+
+    if callback.message is None:
+        await callback.answer("Настройки обновлены.")
+        return
+
+    await callback.message.edit_text(
+        _format_pair_universe_menu_text(settings, selected_count),
+        reply_markup=pair_universe_keyboard(
             selected_popular_pairs_count=selected_count,
             current_pair_universe=settings.pair_universe,
         ),
     )
+    await callback.answer()
 
 
 async def _activate_popular_30_universe(
@@ -179,6 +184,7 @@ async def _edit_popular_pairs_message(
     selected_count = sum(selections.values())
     text = (
         f"{format_user_settings(settings)}\n\n"
+        f"Список пар закреплен: {pair_universe_label(settings.pair_universe)}\n"
         f"Популярные пары: выбрано {selected_count}/30\n"
         "Отметьте пары, которые нужно мониторить."
     )
@@ -192,6 +198,18 @@ async def _edit_popular_pairs_message(
         reply_markup=popular_pairs_keyboard(selections),
     )
     await callback.answer()
+
+
+def _format_pair_universe_menu_text(
+    settings: UserSettings,
+    selected_popular_pairs_count: int,
+) -> str:
+    return (
+        "Выбор списка пар\n\n"
+        f"Сейчас закреплено: {pair_universe_label(settings.pair_universe)}\n"
+        f"Популярные 30: выбрано {selected_popular_pairs_count}/30\n\n"
+        f"{format_user_settings(settings)}"
+    )
 
 
 @router.message(CommandStart())
