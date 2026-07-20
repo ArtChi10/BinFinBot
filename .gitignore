@@ -1,6 +1,7 @@
 .env
 *.sqlite3
 *.sqlite3-*
+*.db
 __pycache__/
 *.py[cod]
 .venv/
@@ -8,4 +9,7 @@ venv/
 .idea/
 .pytest_cache/
 .mypy_cache/
+data/*
+!data/.gitkeep
+logs/
 local_notes/project_change_journal.md

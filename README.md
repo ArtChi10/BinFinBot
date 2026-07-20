@@ -44,6 +44,17 @@ python -m src.bot.main
 
 Команда `/start` открывает постоянное меню с кнопками `Настройки`, `Статус`, `Помощь`.
 
+## Серверный запуск
+
+Для VPS подготовлен Docker Compose деплой:
+
+```bash
+docker compose up -d --build
+docker compose logs -f bot
+```
+
+Подробная инструкция: [docs/deployment.md](docs/deployment.md).
+
 ## MVP
 
 Текущий MVP включает:
