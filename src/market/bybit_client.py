@@ -15,7 +15,7 @@ class UnsupportedTimeframeError(ValueError):
 
 
 class BybitMarketDataClient:
-    SUPPORTED_TIMEFRAMES = {"5m", "15m", "30m"}
+    SUPPORTED_TIMEFRAMES = {"1m", "3m", "5m", "15m", "30m"}
 
     def __init__(self) -> None:
         self._exchange = ccxt.bybit(
@@ -91,9 +91,9 @@ class BybitMarketDataClient:
         try:
             markets = await self._exchange.load_markets()
             market = markets.get(symbol)
-            if not self._is_active_spot_usdt_market(symbol, market):
+            if not self._is_active_spot_market(market):
                 raise MarketDataError(
-                    f"Symbol '{symbol}' is not an active Bybit spot /USDT market."
+                    f"Symbol '{symbol}' is not an active Bybit spot market."
                 )
 
             candles = await self._exchange.fetch_ohlcv(
@@ -132,13 +132,22 @@ class BybitMarketDataClient:
         symbol: str,
         market: Mapping[str, Any] | None,
     ) -> bool:
+        return (
+            symbol.endswith("/USDT")
+            and BybitMarketDataClient._is_active_spot_market(market)
+            and market is not None
+            and market.get("quote") == "USDT"
+        )
+
+    @staticmethod
+    def _is_active_spot_market(
+        market: Mapping[str, Any] | None,
+    ) -> bool:
         if market is None:
             return False
         return (
-            symbol.endswith("/USDT")
-            and market.get("spot") is True
+            market.get("spot") is True
             and market.get("active") is True
-            and market.get("quote") == "USDT"
         )
 
     @staticmethod

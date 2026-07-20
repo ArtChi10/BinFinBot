@@ -8,8 +8,14 @@ from src.bot.keyboards import (
     custom_pairs_keyboard,
     main_menu_keyboard,
     pair_universe_keyboard,
+    timeframe_keyboard,
+    timeframe_options_for_pair_universe,
 )
-from src.market.universes import PAIR_UNIVERSE_POPULAR_30
+from src.market.universes import (
+    PAIR_UNIVERSE_CUSTOM,
+    PAIR_UNIVERSE_POPULAR_30,
+    PAIR_UNIVERSE_TOP_150,
+)
 
 
 class KeyboardTests(unittest.TestCase):
@@ -69,6 +75,32 @@ class KeyboardTests(unittest.TestCase):
         self.assertIn("Активно: Мои пары", button_texts)
         self.assertIn("Удалить BTC/USDC", button_texts)
         self.assertIn("Удалить ETH/BTC", button_texts)
+
+    def test_timeframe_options_depend_on_pair_universe(self) -> None:
+        self.assertEqual(
+            timeframe_options_for_pair_universe(PAIR_UNIVERSE_TOP_150),
+            ("5m", "15m", "30m"),
+        )
+        self.assertEqual(
+            timeframe_options_for_pair_universe(PAIR_UNIVERSE_POPULAR_30),
+            ("1m", "3m", "5m", "15m", "30m"),
+        )
+        self.assertEqual(
+            timeframe_options_for_pair_universe(PAIR_UNIVERSE_CUSTOM),
+            ("1m", "3m", "5m", "15m", "30m"),
+        )
+
+    def test_top_150_timeframe_keyboard_hides_fast_options(self) -> None:
+        keyboard = timeframe_keyboard(PAIR_UNIVERSE_TOP_150)
+        button_texts = [
+            button.text
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertNotIn("1m", button_texts)
+        self.assertNotIn("3m", button_texts)
+        self.assertIn("5m", button_texts)
 
 
 if __name__ == "__main__":

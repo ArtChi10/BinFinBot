@@ -34,6 +34,8 @@ DEFAULT_OHLCV_LIMIT = 100
 DEFAULT_REQUEST_CONCURRENCY = 5
 
 TIMEFRAME_SECONDS = {
+    "1m": 60,
+    "3m": 3 * 60,
     "5m": 5 * 60,
     "15m": 15 * 60,
     "30m": 30 * 60,

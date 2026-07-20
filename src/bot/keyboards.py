@@ -10,6 +10,7 @@ from aiogram.types import (
 
 from src.market.universes import (
     PAIR_UNIVERSE_LABELS,
+    PAIR_UNIVERSE_TOP_150,
     POPULAR_30_USDT_PAIRS,
     pair_universe_label,
 )
@@ -39,7 +40,9 @@ TIMEFRAME_VALUE_PREFIX = "settings:timeframe:"
 RSI_VALUE_PREFIX = "settings:rsi:"
 VOLUME_VALUE_PREFIX = "settings:volume:"
 
-TIMEFRAME_OPTIONS = ("5m", "15m", "30m")
+TOP_150_TIMEFRAME_OPTIONS = ("5m", "15m", "30m")
+FOCUSED_PAIR_TIMEFRAME_OPTIONS = ("1m", "3m", "5m", "15m", "30m")
+TIMEFRAME_OPTIONS = FOCUSED_PAIR_TIMEFRAME_OPTIONS
 RSI_RANGE_OPTIONS = (
     (30, 50),
     (40, 60),
@@ -116,6 +119,16 @@ def settings_keyboard(
             ],
         ],
     )
+
+
+def timeframe_options_for_pair_universe(pair_universe: str) -> tuple[str, ...]:
+    if pair_universe == PAIR_UNIVERSE_TOP_150:
+        return TOP_150_TIMEFRAME_OPTIONS
+    return FOCUSED_PAIR_TIMEFRAME_OPTIONS
+
+
+def default_timeframe_for_pair_universe(pair_universe: str) -> str:
+    return timeframe_options_for_pair_universe(pair_universe)[0]
 
 
 def pair_universe_keyboard(
@@ -242,7 +255,8 @@ def popular_pair_symbol_from_callback_value(value: str) -> str:
     return symbol
 
 
-def timeframe_keyboard() -> InlineKeyboardMarkup:
+def timeframe_keyboard(pair_universe: str) -> InlineKeyboardMarkup:
+    timeframe_options = timeframe_options_for_pair_universe(pair_universe)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -251,7 +265,7 @@ def timeframe_keyboard() -> InlineKeyboardMarkup:
                     callback_data=f"{TIMEFRAME_VALUE_PREFIX}{timeframe}",
                 )
             ]
-            for timeframe in TIMEFRAME_OPTIONS
+            for timeframe in timeframe_options
         ]
         + [_back_row()],
     )

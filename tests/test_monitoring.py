@@ -44,6 +44,16 @@ class MonitoringTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             closed_ohlcv_candles([], timeframe="1h", now_ms=0)
 
+    def test_closed_ohlcv_candles_supports_one_minute_timeframe(self) -> None:
+        candles = [
+            [0, 1, 1, 1, 1, 100],
+            [60_000, 1, 1, 1, 1, 100],
+        ]
+
+        result = closed_ohlcv_candles(candles, timeframe="1m", now_ms=119_999)
+
+        self.assertEqual(result, candles[:1])
+
     async def test_symbols_by_user_resolves_dynamic_and_selected_popular_lists(
         self,
     ) -> None:

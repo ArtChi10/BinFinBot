@@ -2,12 +2,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from src.bot.database import ensure_user_settings, get_user_settings, init_db
+from src.bot.database import (
+    ensure_user_settings,
+    get_user_settings,
+    init_db,
+    update_user_timeframe,
+)
 from src.bot.handlers import (
-    _activate_popular_30_universe,
     _activate_custom_pair_universe,
+    _activate_popular_30_universe,
     _format_custom_pairs_menu_text,
     _format_pair_universe_menu_text,
+    _update_pair_universe_with_safe_timeframe,
 )
 from src.market.universes import (
     PAIR_UNIVERSE_CUSTOM,
@@ -87,6 +93,26 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Добавлено пар: 2", text)
         self.assertIn("- BTC/USDC", text)
         self.assertIn("/addpair ETH/BTC", text)
+
+    async def test_switching_to_top_150_resets_fast_timeframe(self) -> None:
+        await _activate_custom_pair_universe(
+            self.database_path,
+            telegram_user_id=123,
+        )
+        await update_user_timeframe(
+            self.database_path,
+            telegram_user_id=123,
+            timeframe="1m",
+        )
+
+        settings = await _update_pair_universe_with_safe_timeframe(
+            self.database_path,
+            telegram_user_id=123,
+            pair_universe=PAIR_UNIVERSE_TOP_150,
+        )
+
+        self.assertEqual(settings.pair_universe, PAIR_UNIVERSE_TOP_150)
+        self.assertEqual(settings.timeframe, "5m")
 
 
 if __name__ == "__main__":

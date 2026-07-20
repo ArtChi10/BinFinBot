@@ -40,12 +40,12 @@ from .keyboards import (
     RSI_VALUE_PREFIX,
     SETTINGS_MENU_CALLBACK,
     TIMEFRAME_MENU_CALLBACK,
-    TIMEFRAME_OPTIONS,
     TIMEFRAME_VALUE_PREFIX,
     VOLUME_MENU_CALLBACK,
     VOLUME_THRESHOLD_OPTIONS,
     VOLUME_VALUE_PREFIX,
     custom_pairs_keyboard,
+    default_timeframe_for_pair_universe,
     main_menu_keyboard,
     pair_universe_keyboard,
     popular_pair_symbol_from_callback_value,
@@ -53,6 +53,7 @@ from .keyboards import (
     rsi_keyboard,
     settings_keyboard,
     timeframe_keyboard,
+    timeframe_options_for_pair_universe,
     volume_keyboard,
 )
 from src.market.universes import (
@@ -146,7 +147,7 @@ async def _show_help_message(message: Message) -> None:
         "Статус — быстро посмотреть текущий режим мониторинга.\n\n"
         "Мои пары — список произвольных spot-пар Bybit, например ETH/BTC "
         "или BTC/USDC. Добавить: /addpair ETH/BTC. Удалить: /removepair ETH/BTC.\n\n"
-        "Для проверки уведомлений можно временно поставить 5m, объем 0.1% "
+        "Для проверки уведомлений можно временно выбрать Мои пары, 1m, объем 0.1% "
         "и широкий RSI-диапазон. Низкие пороги шумные и нужны только для теста.",
         reply_markup=main_menu_keyboard(),
     )
@@ -237,6 +238,26 @@ async def _activate_custom_pair_universe(
     )
 
 
+async def _update_pair_universe_with_safe_timeframe(
+    database_path: str,
+    telegram_user_id: int,
+    pair_universe: str,
+) -> UserSettings:
+    settings = await update_user_pair_universe(
+        database_path,
+        telegram_user_id,
+        pair_universe,
+    )
+    if settings.timeframe in timeframe_options_for_pair_universe(pair_universe):
+        return settings
+
+    return await update_user_timeframe(
+        database_path,
+        telegram_user_id,
+        default_timeframe_for_pair_universe(pair_universe),
+    )
+
+
 async def _edit_popular_pairs_message(
     callback: CallbackQuery,
     settings: UserSettings,
@@ -290,6 +311,9 @@ def _format_pair_universe_menu_text(
         f"Сейчас закреплено: {pair_universe_label(settings.pair_universe)}\n"
         f"Популярные 30: выбрано {selected_popular_pairs_count}/30\n\n"
         f"Мои пары: добавлено {custom_pairs_count}\n\n"
+        "Таймфреймы:\n"
+        "- Топ-150: 5m, 15m, 30m\n"
+        "- Популярные 30 и Мои пары: 1m, 3m, 5m, 15m, 30m\n\n"
         f"{format_user_settings(settings)}"
     )
 
@@ -467,7 +491,7 @@ async def handle_pair_universe_selection(
         await callback.answer("Неизвестный список пар.", show_alert=True)
         return
 
-    settings = await update_user_pair_universe(
+    settings = await _update_pair_universe_with_safe_timeframe(
         database_path,
         callback.from_user.id,
         pair_universe,
@@ -605,7 +629,11 @@ async def handle_popular_pair_clear_all(
 @router.callback_query(F.data == TIMEFRAME_MENU_CALLBACK)
 async def handle_timeframe_menu(callback: CallbackQuery, database_path: str) -> None:
     settings = await ensure_user_settings(database_path, callback.from_user.id)
-    await _edit_settings_message(callback, settings, timeframe_keyboard())
+    await _edit_settings_message(
+        callback,
+        settings,
+        timeframe_keyboard(settings.pair_universe),
+    )
 
 
 @router.callback_query(F.data.startswith(TIMEFRAME_VALUE_PREFIX))
@@ -614,8 +642,12 @@ async def handle_timeframe_selection(
     database_path: str,
 ) -> None:
     timeframe = callback.data.removeprefix(TIMEFRAME_VALUE_PREFIX)
-    if timeframe not in TIMEFRAME_OPTIONS:
-        await callback.answer("Неизвестный таймфрейм.", show_alert=True)
+    current_settings = await ensure_user_settings(database_path, callback.from_user.id)
+    if timeframe not in timeframe_options_for_pair_universe(current_settings.pair_universe):
+        await callback.answer(
+            "Этот таймфрейм недоступен для выбранного списка пар.",
+            show_alert=True,
+        )
         return
 
     settings = await update_user_timeframe(
