@@ -1,6 +1,12 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
 from collections.abc import Mapping
+
+from aiogram.types import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from src.market.universes import (
     PAIR_UNIVERSE_LABELS,
@@ -8,6 +14,10 @@ from src.market.universes import (
     pair_universe_label,
 )
 
+
+MAIN_MENU_SETTINGS_TEXT = "Настройки"
+MAIN_MENU_STATUS_TEXT = "Статус"
+MAIN_MENU_HELP_TEXT = "Помощь"
 
 SETTINGS_MENU_CALLBACK = "settings:menu"
 PAIR_UNIVERSE_MENU_CALLBACK = "settings:pairs"
@@ -34,6 +44,29 @@ RSI_RANGE_OPTIONS = (
     (70, 90),
 )
 VOLUME_THRESHOLD_OPTIONS = (0.1, 0.25, 0.5, 1, 3, 5, 10)
+
+
+def main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text=MAIN_MENU_SETTINGS_TEXT),
+                KeyboardButton(text=MAIN_MENU_STATUS_TEXT),
+            ],
+            [KeyboardButton(text=MAIN_MENU_HELP_TEXT)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие",
+    )
+
+
+def bot_commands() -> list[BotCommand]:
+    return [
+        BotCommand(command="menu", description="Главное меню"),
+        BotCommand(command="settings", description="Настройки скринера"),
+        BotCommand(command="status", description="Текущий статус"),
+        BotCommand(command="help", description="Как пользоваться ботом"),
+    ]
 
 
 def settings_keyboard(

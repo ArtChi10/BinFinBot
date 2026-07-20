@@ -9,6 +9,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from .config import load_config
 from .database import init_db
 from .handlers import router
+from .keyboards import bot_commands
 from src.monitoring.monitor import run_market_monitor
 
 
@@ -36,6 +37,7 @@ async def main() -> None:
 
     monitor_task: asyncio.Task[None] | None = None
     try:
+        await bot.set_my_commands(bot_commands())
         await bot.delete_webhook(drop_pending_updates=True)
         monitor_task = asyncio.create_task(
             run_market_monitor(bot, config.database_path),

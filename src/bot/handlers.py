@@ -17,6 +17,9 @@ from .database import (
     update_user_volume_change_percent,
 )
 from .keyboards import (
+    MAIN_MENU_HELP_TEXT,
+    MAIN_MENU_SETTINGS_TEXT,
+    MAIN_MENU_STATUS_TEXT,
     NOTIFICATIONS_TOGGLE_CALLBACK,
     PAIR_UNIVERSE_MENU_CALLBACK,
     PAIR_UNIVERSE_VALUE_PREFIX,
@@ -34,6 +37,7 @@ from .keyboards import (
     VOLUME_MENU_CALLBACK,
     VOLUME_THRESHOLD_OPTIONS,
     VOLUME_VALUE_PREFIX,
+    main_menu_keyboard,
     pair_universe_keyboard,
     popular_pair_symbol_from_callback_value,
     popular_pairs_keyboard,
@@ -42,7 +46,11 @@ from .keyboards import (
     timeframe_keyboard,
     volume_keyboard,
 )
-from src.market.universes import PAIR_UNIVERSE_OPTIONS, PAIR_UNIVERSE_POPULAR_30
+from src.market.universes import (
+    PAIR_UNIVERSE_OPTIONS,
+    PAIR_UNIVERSE_POPULAR_30,
+    pair_universe_label,
+)
 
 
 router = Router()
@@ -63,6 +71,52 @@ async def _show_settings_message(message: Message, settings: UserSettings) -> No
     await message.answer(
         format_user_settings(settings),
         reply_markup=_settings_keyboard(settings),
+    )
+
+
+async def _show_main_menu(message: Message) -> None:
+    await message.answer(
+        "Главное меню открыто. Выберите действие кнопками ниже.",
+        reply_markup=main_menu_keyboard(),
+    )
+
+
+async def _settings_for_message(message: Message, database_path: str) -> UserSettings | None:
+    if message.from_user is None:
+        await message.answer("Не удалось определить пользователя Telegram.")
+        return None
+
+    settings = await get_user_settings(database_path, message.from_user.id)
+    if settings is None:
+        settings = await ensure_user_settings(database_path, message.from_user.id)
+    return settings
+
+
+async def _show_status_message(message: Message, database_path: str) -> None:
+    settings = await _settings_for_message(message, database_path)
+    if settings is None:
+        return
+
+    selected_pairs_count = None
+    if settings.pair_universe == PAIR_UNIVERSE_POPULAR_30:
+        selections = await get_user_popular_pair_selections(
+            database_path,
+            settings.telegram_user_id,
+        )
+        selected_pairs_count = sum(selections.values())
+
+    await message.answer(_format_status_message(settings, selected_pairs_count))
+
+
+async def _show_help_message(message: Message) -> None:
+    await message.answer(
+        "Как пользоваться\n\n"
+        "Настройки — открыть параметры скринера и выбрать пары, таймфрейм, RSI, "
+        "порог объема и уведомления.\n\n"
+        "Статус — быстро посмотреть текущий режим мониторинга.\n\n"
+        "Для проверки уведомлений можно временно поставить 5m, объем 0.1% "
+        "и широкий RSI-диапазон. Низкие пороги шумные и нужны только для теста.",
+        reply_markup=main_menu_keyboard(),
     )
 
 
@@ -130,23 +184,56 @@ async def handle_start(message: Message, database_path: str) -> None:
 
     settings = await ensure_user_settings(database_path, message.from_user.id)
     await message.answer(
-        "Привет! Я помогу подготовить криптовалютный скринер.\n\n"
-        f"{format_user_settings(settings)}",
+        "Привет! Я помогу следить за криптовалютными парами.",
+        reply_markup=main_menu_keyboard(),
+    )
+    await message.answer(
+        format_user_settings(settings),
         reply_markup=_settings_keyboard(settings),
     )
 
 
+@router.message(Command("menu"))
+async def handle_menu(message: Message) -> None:
+    await _show_main_menu(message)
+
+
 @router.message(Command("settings"))
 async def handle_settings(message: Message, database_path: str) -> None:
-    if message.from_user is None:
-        await message.answer("Не удалось определить пользователя Telegram.")
+    settings = await _settings_for_message(message, database_path)
+    if settings is None:
         return
 
-    settings = await get_user_settings(database_path, message.from_user.id)
+    await _show_settings_message(message, settings)
+
+
+@router.message(Command("status"))
+async def handle_status(message: Message, database_path: str) -> None:
+    await _show_status_message(message, database_path)
+
+
+@router.message(Command("help"))
+async def handle_help(message: Message) -> None:
+    await _show_help_message(message)
+
+
+@router.message(F.text == MAIN_MENU_SETTINGS_TEXT)
+async def handle_settings_button(message: Message, database_path: str) -> None:
+    settings = await _settings_for_message(message, database_path)
     if settings is None:
-        settings = await ensure_user_settings(database_path, message.from_user.id)
+        return
 
     await _show_settings_message(message, settings)
+
+
+@router.message(F.text == MAIN_MENU_STATUS_TEXT)
+async def handle_status_button(message: Message, database_path: str) -> None:
+    await _show_status_message(message, database_path)
+
+
+@router.message(F.text == MAIN_MENU_HELP_TEXT)
+async def handle_help_button(message: Message) -> None:
+    await _show_help_message(message)
 
 
 @router.callback_query(F.data == SETTINGS_MENU_CALLBACK)
@@ -343,3 +430,24 @@ async def handle_notifications_toggle(
 @router.callback_query()
 async def handle_unknown_callback(callback: CallbackQuery) -> None:
     await callback.answer("Неизвестное действие.", show_alert=True)
+
+
+def _format_status_message(
+    settings: UserSettings,
+    selected_pairs_count: int | None,
+) -> str:
+    notifications = "включены" if settings.notifications_enabled else "выключены"
+    pair_details = ""
+    if selected_pairs_count is not None:
+        pair_details = f"\nВыбрано популярных пар: {selected_pairs_count}/30"
+
+    return (
+        "Статус мониторинга\n\n"
+        f"Биржа: {settings.exchange.capitalize()}\n"
+        f"Список пар: {pair_universe_label(settings.pair_universe)}"
+        f"{pair_details}\n"
+        f"Таймфрейм: {settings.timeframe}\n"
+        f"Минимальный рост объема: {settings.volume_change_percent:g}%\n"
+        f"RSI: {settings.rsi_min}–{settings.rsi_max}\n"
+        f"Уведомления: {notifications}"
+    )
