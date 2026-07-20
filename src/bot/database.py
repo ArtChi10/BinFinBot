@@ -42,6 +42,17 @@ CREATE TABLE IF NOT EXISTS user_settings (
 """
 
 
+CREATE_SIGNAL_COOLDOWNS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS signal_cooldowns (
+    telegram_user_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    last_sent_at TEXT NOT NULL,
+    PRIMARY KEY (telegram_user_id, symbol, timeframe)
+);
+"""
+
+
 CREATE_UPDATED_AT_TRIGGER_SQL = """
 CREATE TRIGGER IF NOT EXISTS user_settings_updated_at
 AFTER UPDATE ON user_settings
@@ -60,6 +71,7 @@ async def init_db(database_path: str) -> None:
 
     async with aiosqlite.connect(database_path) as db:
         await db.execute(CREATE_USER_SETTINGS_TABLE_SQL)
+        await db.execute(CREATE_SIGNAL_COOLDOWNS_TABLE_SQL)
         await db.execute(CREATE_UPDATED_AT_TRIGGER_SQL)
         await db.commit()
 
@@ -129,17 +141,33 @@ async def get_user_settings(
     if row is None:
         return None
 
-    return UserSettings(
-        telegram_user_id=int(row["telegram_user_id"]),
-        exchange=str(row["exchange"]),
-        timeframe=str(row["timeframe"]),
-        volume_change_percent=float(row["volume_change_percent"]),
-        rsi_min=int(row["rsi_min"]),
-        rsi_max=int(row["rsi_max"]),
-        notifications_enabled=bool(row["notifications_enabled"]),
-        created_at=str(row["created_at"]),
-        updated_at=str(row["updated_at"]),
-    )
+    return _settings_from_row(row)
+
+
+async def get_notification_user_settings(database_path: str) -> list[UserSettings]:
+    async with aiosqlite.connect(database_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT
+                telegram_user_id,
+                exchange,
+                timeframe,
+                volume_change_percent,
+                rsi_min,
+                rsi_max,
+                notifications_enabled,
+                created_at,
+                updated_at
+            FROM user_settings
+            WHERE notifications_enabled = 1
+            ORDER BY telegram_user_id
+            """
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+    return [_settings_from_row(row) for row in rows]
 
 
 async def update_user_timeframe(
@@ -224,6 +252,20 @@ async def _get_existing_user_settings(
     if settings is None:
         raise RuntimeError("User settings were not found after update.")
     return settings
+
+
+def _settings_from_row(row: aiosqlite.Row) -> UserSettings:
+    return UserSettings(
+        telegram_user_id=int(row["telegram_user_id"]),
+        exchange=str(row["exchange"]),
+        timeframe=str(row["timeframe"]),
+        volume_change_percent=float(row["volume_change_percent"]),
+        rsi_min=int(row["rsi_min"]),
+        rsi_max=int(row["rsi_max"]),
+        notifications_enabled=bool(row["notifications_enabled"]),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
 
 
 def format_user_settings(settings: UserSettings) -> str:
