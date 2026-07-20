@@ -19,7 +19,7 @@ RSI_RANGE_OPTIONS = (
     (60, 80),
     (70, 90),
 )
-VOLUME_THRESHOLD_OPTIONS = (0.5, 1, 3, 5, 10)
+VOLUME_THRESHOLD_OPTIONS = (0.1, 0.25, 0.5, 1, 3, 5, 10)
 
 
 def settings_keyboard(
