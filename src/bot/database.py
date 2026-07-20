@@ -7,6 +7,7 @@ from src.bot.db_backend import connect_postgres, is_postgres_database_url
 from src.market.universes import (
     PAIR_UNIVERSE_TOP_150,
     POPULAR_30_USDT_PAIRS,
+    normalize_pair_symbol,
     pair_universe_label,
 )
 
@@ -74,6 +75,16 @@ CREATE TABLE IF NOT EXISTS user_popular_pair_selections (
 """
 
 
+CREATE_USER_CUSTOM_PAIRS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS user_custom_pairs (
+    telegram_user_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (telegram_user_id, symbol)
+);
+"""
+
+
 CREATE_UPDATED_AT_TRIGGER_SQL = """
 CREATE TRIGGER IF NOT EXISTS user_settings_updated_at
 AFTER UPDATE ON user_settings
@@ -125,6 +136,16 @@ CREATE TABLE IF NOT EXISTS user_popular_pair_selections (
 """
 
 
+CREATE_USER_CUSTOM_PAIRS_TABLE_POSTGRES_SQL = """
+CREATE TABLE IF NOT EXISTS user_custom_pairs (
+    telegram_user_id BIGINT NOT NULL,
+    symbol TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (telegram_user_id, symbol)
+);
+"""
+
+
 async def init_db(database_path: str) -> None:
     if is_postgres_database_url(database_path):
         await _init_postgres_db(database_path)
@@ -137,6 +158,7 @@ async def init_db(database_path: str) -> None:
         await _ensure_user_settings_columns(db)
         await db.execute(CREATE_SIGNAL_COOLDOWNS_TABLE_SQL)
         await db.execute(CREATE_USER_POPULAR_PAIR_SELECTIONS_TABLE_SQL)
+        await db.execute(CREATE_USER_CUSTOM_PAIRS_TABLE_SQL)
         await db.execute(CREATE_UPDATED_AT_TRIGGER_SQL)
         await db.commit()
 
@@ -290,6 +312,113 @@ async def get_selected_popular_pairs(
         for symbol in POPULAR_30_USDT_PAIRS
         if selections.get(symbol, False)
     ]
+
+
+async def get_user_custom_pairs(
+    database_path: str,
+    telegram_user_id: int,
+) -> list[str]:
+    if is_postgres_database_url(database_path):
+        return await _get_user_custom_pairs_postgres(database_path, telegram_user_id)
+
+    await ensure_user_settings(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT symbol
+            FROM user_custom_pairs
+            WHERE telegram_user_id = ?
+            ORDER BY symbol
+            """,
+            (telegram_user_id,),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+    return [str(row[0]) for row in rows]
+
+
+async def add_user_custom_pair(
+    database_path: str,
+    telegram_user_id: int,
+    symbol: str,
+) -> list[str]:
+    normalized_symbol = normalize_pair_symbol(symbol)
+    if is_postgres_database_url(database_path):
+        return await _add_user_custom_pair_postgres(
+            database_path,
+            telegram_user_id,
+            normalized_symbol,
+        )
+
+    await ensure_user_settings(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO user_custom_pairs (
+                telegram_user_id,
+                symbol
+            )
+            VALUES (?, ?)
+            """,
+            (telegram_user_id, normalized_symbol),
+        )
+        await db.commit()
+
+    return await get_user_custom_pairs(database_path, telegram_user_id)
+
+
+async def remove_user_custom_pair(
+    database_path: str,
+    telegram_user_id: int,
+    symbol: str,
+) -> list[str]:
+    normalized_symbol = normalize_pair_symbol(symbol)
+    if is_postgres_database_url(database_path):
+        return await _remove_user_custom_pair_postgres(
+            database_path,
+            telegram_user_id,
+            normalized_symbol,
+        )
+
+    await ensure_user_settings(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        await db.execute(
+            """
+            DELETE FROM user_custom_pairs
+            WHERE telegram_user_id = ?
+              AND symbol = ?
+            """,
+            (telegram_user_id, normalized_symbol),
+        )
+        await db.commit()
+
+    return await get_user_custom_pairs(database_path, telegram_user_id)
+
+
+async def clear_user_custom_pairs(
+    database_path: str,
+    telegram_user_id: int,
+) -> list[str]:
+    if is_postgres_database_url(database_path):
+        return await _clear_user_custom_pairs_postgres(database_path, telegram_user_id)
+
+    await ensure_user_settings(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        await db.execute(
+            """
+            DELETE FROM user_custom_pairs
+            WHERE telegram_user_id = ?
+            """,
+            (telegram_user_id,),
+        )
+        await db.commit()
+
+    return []
 
 
 async def ensure_user_popular_pair_selections(
@@ -490,6 +619,7 @@ async def _init_postgres_db(database_url: str) -> None:
         await _ensure_user_settings_columns_postgres(connection)
         await connection.execute(CREATE_SIGNAL_COOLDOWNS_TABLE_POSTGRES_SQL)
         await connection.execute(CREATE_USER_POPULAR_PAIR_SELECTIONS_TABLE_POSTGRES_SQL)
+        await connection.execute(CREATE_USER_CUSTOM_PAIRS_TABLE_POSTGRES_SQL)
     finally:
         await connection.close()
 
@@ -687,6 +817,101 @@ async def _set_all_user_popular_pair_selections_postgres(
         await connection.close()
 
     return {symbol: selected for symbol in POPULAR_30_USDT_PAIRS}
+
+
+async def _get_user_custom_pairs_postgres(
+    database_url: str,
+    telegram_user_id: int,
+) -> list[str]:
+    await _ensure_user_settings_postgres(database_url, telegram_user_id)
+
+    connection = await connect_postgres(database_url)
+    try:
+        rows = await connection.fetch(
+            """
+            SELECT symbol
+            FROM user_custom_pairs
+            WHERE telegram_user_id = $1
+            ORDER BY symbol
+            """,
+            telegram_user_id,
+        )
+    finally:
+        await connection.close()
+
+    return [str(row["symbol"]) for row in rows]
+
+
+async def _add_user_custom_pair_postgres(
+    database_url: str,
+    telegram_user_id: int,
+    symbol: str,
+) -> list[str]:
+    await _ensure_user_settings_postgres(database_url, telegram_user_id)
+
+    connection = await connect_postgres(database_url)
+    try:
+        await connection.execute(
+            """
+            INSERT INTO user_custom_pairs (
+                telegram_user_id,
+                symbol
+            )
+            VALUES ($1, $2)
+            ON CONFLICT (telegram_user_id, symbol) DO NOTHING
+            """,
+            telegram_user_id,
+            symbol,
+        )
+    finally:
+        await connection.close()
+
+    return await _get_user_custom_pairs_postgres(database_url, telegram_user_id)
+
+
+async def _remove_user_custom_pair_postgres(
+    database_url: str,
+    telegram_user_id: int,
+    symbol: str,
+) -> list[str]:
+    await _ensure_user_settings_postgres(database_url, telegram_user_id)
+
+    connection = await connect_postgres(database_url)
+    try:
+        await connection.execute(
+            """
+            DELETE FROM user_custom_pairs
+            WHERE telegram_user_id = $1
+              AND symbol = $2
+            """,
+            telegram_user_id,
+            symbol,
+        )
+    finally:
+        await connection.close()
+
+    return await _get_user_custom_pairs_postgres(database_url, telegram_user_id)
+
+
+async def _clear_user_custom_pairs_postgres(
+    database_url: str,
+    telegram_user_id: int,
+) -> list[str]:
+    await _ensure_user_settings_postgres(database_url, telegram_user_id)
+
+    connection = await connect_postgres(database_url)
+    try:
+        await connection.execute(
+            """
+            DELETE FROM user_custom_pairs
+            WHERE telegram_user_id = $1
+            """,
+            telegram_user_id,
+        )
+    finally:
+        await connection.close()
+
+    return []
 
 
 async def _update_user_settings_postgres(

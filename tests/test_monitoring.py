@@ -4,11 +4,13 @@ import unittest
 
 from src.bot.database import (
     UserSettings,
+    add_user_custom_pair,
     init_db,
     set_all_user_popular_pair_selections,
     toggle_user_popular_pair_selection,
 )
 from src.market.universes import (
+    PAIR_UNIVERSE_CUSTOM,
     PAIR_UNIVERSE_POPULAR_30,
     PAIR_UNIVERSE_TOP_150,
     POPULAR_30_USDT_PAIRS,
@@ -94,6 +96,30 @@ class MonitoringTests(unittest.IsolatedAsyncioTestCase):
             result = await _symbols_by_user(database_path, [popular_user], [])
 
         self.assertEqual(result[2], set())
+
+    async def test_symbols_by_user_resolves_custom_pairs(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            database_path = str(Path(temp_dir) / "test.sqlite3")
+            await init_db(database_path)
+            await add_user_custom_pair(
+                database_path,
+                telegram_user_id=3,
+                symbol="ETH/BTC",
+            )
+            await add_user_custom_pair(
+                database_path,
+                telegram_user_id=3,
+                symbol="BTC/USDC",
+            )
+
+            custom_user = _settings(
+                telegram_user_id=3,
+                pair_universe=PAIR_UNIVERSE_CUSTOM,
+            )
+
+            result = await _symbols_by_user(database_path, [custom_user], [])
+
+        self.assertEqual(result[3], {"BTC/USDC", "ETH/BTC"})
 
     def test_popular_30_universe_contains_30_usdt_pairs(self) -> None:
         self.assertEqual(len(POPULAR_30_USDT_PAIRS), 30)

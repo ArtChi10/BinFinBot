@@ -5,11 +5,15 @@ import unittest
 import aiosqlite
 
 from src.bot.database import (
+    add_user_custom_pair,
+    clear_user_custom_pairs,
     ensure_user_settings,
     get_selected_popular_pairs,
+    get_user_custom_pairs,
     get_user_popular_pair_selections,
     get_user_settings,
     init_db,
+    remove_user_custom_pair,
     set_all_user_popular_pair_selections,
     toggle_user_popular_pair_selection,
 )
@@ -89,6 +93,47 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
             await get_selected_popular_pairs(self.database_path, telegram_user_id=123),
             [],
         )
+
+    async def test_custom_pairs_can_be_added_and_normalized(self) -> None:
+        await init_db(self.database_path)
+
+        custom_pairs = await add_user_custom_pair(
+            self.database_path,
+            telegram_user_id=123,
+            symbol="eth btc",
+        )
+
+        self.assertEqual(custom_pairs, ["ETH/BTC"])
+        self.assertEqual(
+            await get_user_custom_pairs(self.database_path, telegram_user_id=123),
+            ["ETH/BTC"],
+        )
+
+    async def test_custom_pairs_can_be_removed_and_cleared(self) -> None:
+        await init_db(self.database_path)
+        await add_user_custom_pair(
+            self.database_path,
+            telegram_user_id=123,
+            symbol="ETH/BTC",
+        )
+        await add_user_custom_pair(
+            self.database_path,
+            telegram_user_id=123,
+            symbol="BTC/USDC",
+        )
+
+        custom_pairs = await remove_user_custom_pair(
+            self.database_path,
+            telegram_user_id=123,
+            symbol="eth-btc",
+        )
+        cleared_pairs = await clear_user_custom_pairs(
+            self.database_path,
+            telegram_user_id=123,
+        )
+
+        self.assertEqual(custom_pairs, ["BTC/USDC"])
+        self.assertEqual(cleared_pairs, [])
 
     async def _create_old_user_settings_table(self) -> None:
         async with aiosqlite.connect(self.database_path) as db:

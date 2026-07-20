@@ -4,10 +4,14 @@ from aiogram.types import CallbackQuery, Message
 
 from .database import (
     UserSettings,
+    add_user_custom_pair,
+    clear_user_custom_pairs,
     ensure_user_settings,
     format_user_settings,
+    get_user_custom_pairs,
     get_user_popular_pair_selections,
     get_user_settings,
+    remove_user_custom_pair,
     set_all_user_popular_pair_selections,
     toggle_user_notifications,
     toggle_user_popular_pair_selection,
@@ -20,6 +24,10 @@ from .keyboards import (
     MAIN_MENU_HELP_TEXT,
     MAIN_MENU_SETTINGS_TEXT,
     MAIN_MENU_STATUS_TEXT,
+    CUSTOM_PAIR_REMOVE_PREFIX,
+    CUSTOM_PAIRS_ACTIVATE_CALLBACK,
+    CUSTOM_PAIRS_CALLBACK,
+    CUSTOM_PAIRS_CLEAR_CALLBACK,
     NOTIFICATIONS_TOGGLE_CALLBACK,
     PAIR_UNIVERSE_MENU_CALLBACK,
     PAIR_UNIVERSE_VALUE_PREFIX,
@@ -37,6 +45,7 @@ from .keyboards import (
     VOLUME_MENU_CALLBACK,
     VOLUME_THRESHOLD_OPTIONS,
     VOLUME_VALUE_PREFIX,
+    custom_pairs_keyboard,
     main_menu_keyboard,
     pair_universe_keyboard,
     popular_pair_symbol_from_callback_value,
@@ -47,8 +56,10 @@ from .keyboards import (
     volume_keyboard,
 )
 from src.market.universes import (
+    PAIR_UNIVERSE_CUSTOM,
     PAIR_UNIVERSE_OPTIONS,
     PAIR_UNIVERSE_POPULAR_30,
+    normalize_pair_symbol,
     pair_universe_label,
 )
 
@@ -104,8 +115,27 @@ async def _show_status_message(message: Message, database_path: str) -> None:
             settings.telegram_user_id,
         )
         selected_pairs_count = sum(selections.values())
+    if settings.pair_universe == PAIR_UNIVERSE_CUSTOM:
+        custom_pairs = await get_user_custom_pairs(
+            database_path,
+            settings.telegram_user_id,
+        )
+        selected_pairs_count = len(custom_pairs)
 
     await message.answer(_format_status_message(settings, selected_pairs_count))
+
+
+async def _show_custom_pairs_message(message: Message, database_path: str) -> None:
+    if message.from_user is None:
+        await message.answer("Не удалось определить пользователя Telegram.")
+        return
+
+    settings = await _activate_custom_pair_universe(database_path, message.from_user.id)
+    custom_pairs = await get_user_custom_pairs(database_path, message.from_user.id)
+    await message.answer(
+        _format_custom_pairs_menu_text(settings, custom_pairs),
+        reply_markup=custom_pairs_keyboard(custom_pairs, active=True),
+    )
 
 
 async def _show_help_message(message: Message) -> None:
@@ -114,10 +144,20 @@ async def _show_help_message(message: Message) -> None:
         "Настройки — открыть параметры скринера и выбрать пары, таймфрейм, RSI, "
         "порог объема и уведомления.\n\n"
         "Статус — быстро посмотреть текущий режим мониторинга.\n\n"
+        "Мои пары — список произвольных spot-пар Bybit, например ETH/BTC "
+        "или BTC/USDC. Добавить: /addpair ETH/BTC. Удалить: /removepair ETH/BTC.\n\n"
         "Для проверки уведомлений можно временно поставить 5m, объем 0.1% "
         "и широкий RSI-диапазон. Низкие пороги шумные и нужны только для теста.",
         reply_markup=main_menu_keyboard(),
     )
+
+
+def _command_argument(message: Message) -> str:
+    text = message.text or ""
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return ""
+    return parts[1].strip()
 
 
 async def _edit_settings_message(
@@ -145,6 +185,7 @@ async def _edit_pair_universe_message(
         database_path,
         callback.from_user.id,
     )
+    custom_pairs = await get_user_custom_pairs(database_path, callback.from_user.id)
     selected_count = sum(selections.values())
 
     if callback.message is None:
@@ -152,9 +193,14 @@ async def _edit_pair_universe_message(
         return
 
     await callback.message.edit_text(
-        _format_pair_universe_menu_text(settings, selected_count),
+        _format_pair_universe_menu_text(
+            settings,
+            selected_popular_pairs_count=selected_count,
+            custom_pairs_count=len(custom_pairs),
+        ),
         reply_markup=pair_universe_keyboard(
             selected_popular_pairs_count=selected_count,
+            custom_pairs_count=len(custom_pairs),
             current_pair_universe=settings.pair_universe,
         ),
     )
@@ -173,6 +219,21 @@ async def _activate_popular_30_universe(
         database_path,
         telegram_user_id,
         PAIR_UNIVERSE_POPULAR_30,
+    )
+
+
+async def _activate_custom_pair_universe(
+    database_path: str,
+    telegram_user_id: int,
+) -> UserSettings:
+    settings = await ensure_user_settings(database_path, telegram_user_id)
+    if settings.pair_universe == PAIR_UNIVERSE_CUSTOM:
+        return settings
+
+    return await update_user_pair_universe(
+        database_path,
+        telegram_user_id,
+        PAIR_UNIVERSE_CUSTOM,
     )
 
 
@@ -200,15 +261,55 @@ async def _edit_popular_pairs_message(
     await callback.answer()
 
 
+async def _edit_custom_pairs_message(
+    callback: CallbackQuery,
+    settings: UserSettings,
+    custom_pairs: list[str],
+) -> None:
+    if callback.message is None:
+        await callback.answer("Настройки обновлены.")
+        return
+
+    await callback.message.edit_text(
+        _format_custom_pairs_menu_text(settings, custom_pairs),
+        reply_markup=custom_pairs_keyboard(
+            custom_pairs,
+            active=settings.pair_universe == PAIR_UNIVERSE_CUSTOM,
+        ),
+    )
+    await callback.answer()
+
+
 def _format_pair_universe_menu_text(
     settings: UserSettings,
     selected_popular_pairs_count: int,
+    custom_pairs_count: int,
 ) -> str:
     return (
         "Выбор списка пар\n\n"
         f"Сейчас закреплено: {pair_universe_label(settings.pair_universe)}\n"
         f"Популярные 30: выбрано {selected_popular_pairs_count}/30\n\n"
+        f"Мои пары: добавлено {custom_pairs_count}\n\n"
         f"{format_user_settings(settings)}"
+    )
+
+
+def _format_custom_pairs_menu_text(
+    settings: UserSettings,
+    custom_pairs: list[str],
+) -> str:
+    pairs_text = "\n".join(f"- {symbol}" for symbol in custom_pairs)
+    if not pairs_text:
+        pairs_text = "Пока список пуст."
+
+    return (
+        "Мои пары\n\n"
+        f"Список пар закреплен: {pair_universe_label(settings.pair_universe)}\n"
+        f"Добавлено пар: {len(custom_pairs)}\n\n"
+        f"{pairs_text}\n\n"
+        "Чтобы добавить пару, отправьте команду:\n"
+        "/addpair ETH/BTC\n\n"
+        "Поддерживаются пары с явным разделителем: BTC/USDC, ETH-BTC, SOL BTC."
     )
 
 
@@ -246,6 +347,78 @@ async def handle_settings(message: Message, database_path: str) -> None:
 @router.message(Command("status"))
 async def handle_status(message: Message, database_path: str) -> None:
     await _show_status_message(message, database_path)
+
+
+@router.message(Command("pairs"))
+async def handle_pairs(message: Message, database_path: str) -> None:
+    await _show_custom_pairs_message(message, database_path)
+
+
+@router.message(Command("addpair"))
+async def handle_add_pair(message: Message, database_path: str) -> None:
+    if message.from_user is None:
+        await message.answer("Не удалось определить пользователя Telegram.")
+        return
+
+    raw_symbol = _command_argument(message)
+    if not raw_symbol:
+        await message.answer("Укажите пару, например: /addpair ETH/BTC")
+        return
+
+    try:
+        symbol = normalize_pair_symbol(raw_symbol)
+    except ValueError:
+        await message.answer(
+            "Не понял пару. Используйте формат с разделителем, например: /addpair ETH/BTC"
+        )
+        return
+
+    settings = await _activate_custom_pair_universe(database_path, message.from_user.id)
+    custom_pairs = await add_user_custom_pair(
+        database_path,
+        message.from_user.id,
+        symbol,
+    )
+    await message.answer(
+        f"Пара добавлена: {symbol}\n\n"
+        f"{_format_custom_pairs_menu_text(settings, custom_pairs)}",
+        reply_markup=custom_pairs_keyboard(custom_pairs, active=True),
+    )
+
+
+@router.message(Command("removepair"))
+async def handle_remove_pair(message: Message, database_path: str) -> None:
+    if message.from_user is None:
+        await message.answer("Не удалось определить пользователя Telegram.")
+        return
+
+    raw_symbol = _command_argument(message)
+    if not raw_symbol:
+        await message.answer("Укажите пару, например: /removepair ETH/BTC")
+        return
+
+    try:
+        symbol = normalize_pair_symbol(raw_symbol)
+    except ValueError:
+        await message.answer(
+            "Не понял пару. Используйте формат с разделителем, например: /removepair ETH/BTC"
+        )
+        return
+
+    settings = await ensure_user_settings(database_path, message.from_user.id)
+    custom_pairs = await remove_user_custom_pair(
+        database_path,
+        message.from_user.id,
+        symbol,
+    )
+    await message.answer(
+        f"Пара удалена: {symbol}\n\n"
+        f"{_format_custom_pairs_menu_text(settings, custom_pairs)}",
+        reply_markup=custom_pairs_keyboard(
+            custom_pairs,
+            active=settings.pair_universe == PAIR_UNIVERSE_CUSTOM,
+        ),
+    )
 
 
 @router.message(Command("help"))
@@ -308,6 +481,11 @@ async def handle_pair_universe_selection(
         await _edit_popular_pairs_message(callback, settings, selections)
         return
 
+    if pair_universe == PAIR_UNIVERSE_CUSTOM:
+        custom_pairs = await get_user_custom_pairs(database_path, callback.from_user.id)
+        await _edit_custom_pairs_message(callback, settings, custom_pairs)
+        return
+
     await _edit_settings_message(callback, settings, _settings_keyboard(settings))
 
 
@@ -322,6 +500,57 @@ async def handle_popular_pair_selections(
         callback.from_user.id,
     )
     await _edit_popular_pairs_message(callback, settings, selections)
+
+
+@router.callback_query(F.data == CUSTOM_PAIRS_CALLBACK)
+async def handle_custom_pairs(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await _activate_custom_pair_universe(database_path, callback.from_user.id)
+    custom_pairs = await get_user_custom_pairs(database_path, callback.from_user.id)
+    await _edit_custom_pairs_message(callback, settings, custom_pairs)
+
+
+@router.callback_query(F.data == CUSTOM_PAIRS_ACTIVATE_CALLBACK)
+async def handle_custom_pairs_activate(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await _activate_custom_pair_universe(database_path, callback.from_user.id)
+    custom_pairs = await get_user_custom_pairs(database_path, callback.from_user.id)
+    await _edit_custom_pairs_message(callback, settings, custom_pairs)
+
+
+@router.callback_query(F.data.startswith(CUSTOM_PAIR_REMOVE_PREFIX))
+async def handle_custom_pair_remove(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    raw_symbol = callback.data.removeprefix(CUSTOM_PAIR_REMOVE_PREFIX)
+    try:
+        symbol = normalize_pair_symbol(raw_symbol)
+    except ValueError:
+        await callback.answer("Неизвестная пара.", show_alert=True)
+        return
+
+    settings = await _activate_custom_pair_universe(database_path, callback.from_user.id)
+    custom_pairs = await remove_user_custom_pair(
+        database_path,
+        callback.from_user.id,
+        symbol,
+    )
+    await _edit_custom_pairs_message(callback, settings, custom_pairs)
+
+
+@router.callback_query(F.data == CUSTOM_PAIRS_CLEAR_CALLBACK)
+async def handle_custom_pairs_clear(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await _activate_custom_pair_universe(database_path, callback.from_user.id)
+    custom_pairs = await clear_user_custom_pairs(database_path, callback.from_user.id)
+    await _edit_custom_pairs_message(callback, settings, custom_pairs)
 
 
 @router.callback_query(F.data.startswith(POPULAR_PAIR_VALUE_PREFIX))
@@ -475,7 +704,10 @@ def _format_status_message(
     notifications = "включены" if settings.notifications_enabled else "выключены"
     pair_details = ""
     if selected_pairs_count is not None:
-        pair_details = f"\nВыбрано популярных пар: {selected_pairs_count}/30"
+        if settings.pair_universe == PAIR_UNIVERSE_POPULAR_30:
+            pair_details = f"\nВыбрано популярных пар: {selected_pairs_count}/30"
+        elif settings.pair_universe == PAIR_UNIVERSE_CUSTOM:
+            pair_details = f"\nВыбрано моих пар: {selected_pairs_count}"
 
     return (
         "Статус мониторинга\n\n"

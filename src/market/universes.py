@@ -1,14 +1,20 @@
+import re
+
+
 PAIR_UNIVERSE_TOP_150 = "top_150"
 PAIR_UNIVERSE_POPULAR_30 = "popular_30"
+PAIR_UNIVERSE_CUSTOM = "custom"
 
 PAIR_UNIVERSE_OPTIONS = (
     PAIR_UNIVERSE_TOP_150,
     PAIR_UNIVERSE_POPULAR_30,
+    PAIR_UNIVERSE_CUSTOM,
 )
 
 PAIR_UNIVERSE_LABELS = {
     PAIR_UNIVERSE_TOP_150: "Топ-150 по объему",
     PAIR_UNIVERSE_POPULAR_30: "Популярные 30",
+    PAIR_UNIVERSE_CUSTOM: "Мои пары",
 }
 
 POPULAR_30_USDT_PAIRS = (
@@ -53,3 +59,21 @@ def fixed_symbols_for_pair_universe(pair_universe: str) -> tuple[str, ...] | Non
     if pair_universe == PAIR_UNIVERSE_POPULAR_30:
         return POPULAR_30_USDT_PAIRS
     return None
+
+
+def normalize_pair_symbol(value: str) -> str:
+    normalized_value = value.strip().upper()
+    normalized_value = re.sub(r"[\s_-]+", "/", normalized_value)
+    parts = [part for part in normalized_value.split("/") if part]
+    if len(parts) != 2:
+        raise ValueError("Pair must contain exactly two assets.")
+
+    base_asset, quote_asset = parts
+    if base_asset == quote_asset:
+        raise ValueError("Base and quote assets must be different.")
+
+    for asset in (base_asset, quote_asset):
+        if not asset.isalnum() or not 2 <= len(asset) <= 15:
+            raise ValueError("Asset code must be 2-15 letters or digits.")
+
+    return f"{base_asset}/{quote_asset}"

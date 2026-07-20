@@ -13,9 +13,11 @@ from src.bot.database import (
     UserSettings,
     get_notification_user_settings,
     get_selected_popular_pairs,
+    get_user_custom_pairs,
 )
 from src.market.bybit_client import BybitMarketDataClient, MarketDataError
 from src.market.universes import (
+    PAIR_UNIVERSE_CUSTOM,
     PAIR_UNIVERSE_POPULAR_30,
     PAIR_UNIVERSE_TOP_150,
     pair_universe_label,
@@ -117,6 +119,14 @@ async def _symbols_by_user(
                 item.telegram_user_id,
             )
             symbols_by_user[item.telegram_user_id] = set(selected_symbols)
+            continue
+
+        if item.pair_universe == PAIR_UNIVERSE_CUSTOM:
+            custom_symbols = await get_user_custom_pairs(
+                database_path,
+                item.telegram_user_id,
+            )
+            symbols_by_user[item.telegram_user_id] = set(custom_symbols)
             continue
 
         logger.warning("Unknown pair universe: %s", item.pair_universe)

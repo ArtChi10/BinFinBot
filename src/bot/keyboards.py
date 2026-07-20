@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from aiogram.types import (
     BotCommand,
@@ -24,6 +24,9 @@ PAIR_UNIVERSE_MENU_CALLBACK = "settings:pairs"
 POPULAR_PAIR_SELECTIONS_CALLBACK = "settings:popular_pairs"
 POPULAR_PAIR_SELECT_ALL_CALLBACK = "settings:popular_pairs:all"
 POPULAR_PAIR_CLEAR_ALL_CALLBACK = "settings:popular_pairs:none"
+CUSTOM_PAIRS_CALLBACK = "settings:custom_pairs"
+CUSTOM_PAIRS_ACTIVATE_CALLBACK = "settings:custom_pairs:activate"
+CUSTOM_PAIRS_CLEAR_CALLBACK = "settings:custom_pairs:clear"
 TIMEFRAME_MENU_CALLBACK = "settings:timeframe"
 RSI_MENU_CALLBACK = "settings:rsi"
 VOLUME_MENU_CALLBACK = "settings:volume"
@@ -31,6 +34,7 @@ NOTIFICATIONS_TOGGLE_CALLBACK = "settings:notifications"
 
 PAIR_UNIVERSE_VALUE_PREFIX = "settings:pairs:"
 POPULAR_PAIR_VALUE_PREFIX = "settings:popular_pair:"
+CUSTOM_PAIR_REMOVE_PREFIX = "settings:custom_pair_remove:"
 TIMEFRAME_VALUE_PREFIX = "settings:timeframe:"
 RSI_VALUE_PREFIX = "settings:rsi:"
 VOLUME_VALUE_PREFIX = "settings:volume:"
@@ -65,6 +69,9 @@ def bot_commands() -> list[BotCommand]:
         BotCommand(command="menu", description="Главное меню"),
         BotCommand(command="settings", description="Настройки скринера"),
         BotCommand(command="status", description="Текущий статус"),
+        BotCommand(command="pairs", description="Мои торговые пары"),
+        BotCommand(command="addpair", description="Добавить пару, например ETH/BTC"),
+        BotCommand(command="removepair", description="Удалить пару"),
         BotCommand(command="help", description="Как пользоваться ботом"),
     ]
 
@@ -113,6 +120,7 @@ def settings_keyboard(
 
 def pair_universe_keyboard(
     selected_popular_pairs_count: int,
+    custom_pairs_count: int,
     current_pair_universe: str | None = None,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -134,10 +142,16 @@ def pair_universe_keyboard(
                     text=f"Настроить популярные 30 ({selected_popular_pairs_count}/30)",
                     callback_data=POPULAR_PAIR_SELECTIONS_CALLBACK,
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"Настроить мои пары ({custom_pairs_count})",
+                    callback_data=CUSTOM_PAIRS_CALLBACK,
+                )
+            ],
         ]
         + [_back_row()],
-)
+    )
 
 
 def _pair_universe_button_label(label: str, selected: bool) -> str:
@@ -180,6 +194,44 @@ def popular_pairs_keyboard(
             _back_row(callback_data=PAIR_UNIVERSE_MENU_CALLBACK),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def custom_pairs_keyboard(
+    custom_pairs: Sequence[str],
+    *,
+    active: bool,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="Активно: Мои пары" if active else "Использовать мои пары",
+                callback_data=CUSTOM_PAIRS_ACTIVATE_CALLBACK,
+            )
+        ]
+    ]
+
+    for symbol in custom_pairs:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Удалить {symbol}",
+                    callback_data=f"{CUSTOM_PAIR_REMOVE_PREFIX}{symbol}",
+                )
+            ]
+        )
+
+    if custom_pairs:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Очистить мои пары",
+                    callback_data=CUSTOM_PAIRS_CLEAR_CALLBACK,
+                )
+            ]
+        )
+
+    rows.append(_back_row(callback_data=PAIR_UNIVERSE_MENU_CALLBACK))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
