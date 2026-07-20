@@ -149,7 +149,25 @@ async def _edit_pair_universe_message(
     await _edit_settings_message(
         callback,
         settings,
-        pair_universe_keyboard(selected_popular_pairs_count=selected_count),
+        pair_universe_keyboard(
+            selected_popular_pairs_count=selected_count,
+            current_pair_universe=settings.pair_universe,
+        ),
+    )
+
+
+async def _activate_popular_30_universe(
+    database_path: str,
+    telegram_user_id: int,
+) -> UserSettings:
+    settings = await ensure_user_settings(database_path, telegram_user_id)
+    if settings.pair_universe == PAIR_UNIVERSE_POPULAR_30:
+        return settings
+
+    return await update_user_pair_universe(
+        database_path,
+        telegram_user_id,
+        PAIR_UNIVERSE_POPULAR_30,
     )
 
 
@@ -280,7 +298,7 @@ async def handle_popular_pair_selections(
     callback: CallbackQuery,
     database_path: str,
 ) -> None:
-    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    settings = await _activate_popular_30_universe(database_path, callback.from_user.id)
     selections = await get_user_popular_pair_selections(
         database_path,
         callback.from_user.id,
@@ -300,7 +318,7 @@ async def handle_popular_pair_toggle(
         await callback.answer("Неизвестная пара.", show_alert=True)
         return
 
-    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    settings = await _activate_popular_30_universe(database_path, callback.from_user.id)
     selections = await toggle_user_popular_pair_selection(
         database_path,
         callback.from_user.id,
@@ -314,7 +332,7 @@ async def handle_popular_pair_select_all(
     callback: CallbackQuery,
     database_path: str,
 ) -> None:
-    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    settings = await _activate_popular_30_universe(database_path, callback.from_user.id)
     selections = await set_all_user_popular_pair_selections(
         database_path,
         callback.from_user.id,
@@ -328,7 +346,7 @@ async def handle_popular_pair_clear_all(
     callback: CallbackQuery,
     database_path: str,
 ) -> None:
-    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    settings = await _activate_popular_30_universe(database_path, callback.from_user.id)
     selections = await set_all_user_popular_pair_selections(
         database_path,
         callback.from_user.id,

@@ -111,12 +111,15 @@ def settings_keyboard(
     )
 
 
-def pair_universe_keyboard(selected_popular_pairs_count: int) -> InlineKeyboardMarkup:
+def pair_universe_keyboard(
+    selected_popular_pairs_count: int,
+    current_pair_universe: str | None = None,
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=label,
+                    text=_selected_label(label, pair_universe == current_pair_universe),
                     callback_data=f"{PAIR_UNIVERSE_VALUE_PREFIX}{pair_universe}",
                 )
             ]
@@ -132,6 +135,12 @@ def pair_universe_keyboard(selected_popular_pairs_count: int) -> InlineKeyboardM
         ]
         + [_back_row()],
     )
+
+
+def _selected_label(label: str, selected: bool) -> str:
+    if selected:
+        return f"[x] {label}"
+    return label
 
 
 def popular_pairs_keyboard(
