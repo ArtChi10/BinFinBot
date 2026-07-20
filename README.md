@@ -61,6 +61,17 @@ Compose поднимает Postgres и передает боту `DATABASE_URL`.
 
 Подробная инструкция: [docs/deployment.md](docs/deployment.md).
 
+## CI/CD
+
+GitHub Actions workflow `.github/workflows/ci-cd.yml` запускает:
+
+- `ruff check .`;
+- `python -m compileall src tests`;
+- `python -m unittest`;
+- deploy на сервер по SSH после успешного push в `main`.
+
+Для CD нужны GitHub Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH`, `TELEGRAM_BOT_TOKEN`, `POSTGRES_PASSWORD`. Опционально: `DEPLOY_PORT`, `POSTGRES_DB`, `POSTGRES_USER`.
+
 ## MVP
 
 Текущий MVP включает:

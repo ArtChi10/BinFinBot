@@ -13,23 +13,43 @@ and Bybit.
 
 ## First Deploy
 
-Clone the project on the server:
+Create a deploy directory on the server:
 
 ```bash
-git clone <repo-url> BinFinBot
-cd BinFinBot
+mkdir -p ~/BinFinBot
 ```
 
-Create a server `.env` file:
+GitHub Actions will upload the source archive and create `.env` from GitHub
+Secrets during deploy.
 
-```bash
-cp .env.example .env
-nano .env
-```
+## GitHub Secrets
 
-Fill secrets and Postgres settings:
+Create these secrets in GitHub:
 
 ```text
+DEPLOY_HOST
+DEPLOY_USER
+DEPLOY_SSH_KEY
+DEPLOY_PATH
+TELEGRAM_BOT_TOKEN
+POSTGRES_PASSWORD
+```
+
+Optional secrets:
+
+```text
+DEPLOY_PORT
+POSTGRES_DB
+POSTGRES_USER
+```
+
+Recommended values:
+
+```text
+DEPLOY_HOST=your.server.ip
+DEPLOY_USER=deploy
+DEPLOY_PORT=22
+DEPLOY_PATH=/home/deploy/BinFinBot
 TELEGRAM_BOT_TOKEN=your_real_telegram_bot_token
 POSTGRES_DB=binfinbot
 POSTGRES_USER=binfinbot
@@ -38,6 +58,37 @@ POSTGRES_PASSWORD=use_a_long_random_password
 
 `DATABASE_URL` is assembled by `docker-compose.yml` for the bot container.
 Use a URL-safe password for `POSTGRES_PASSWORD` or URL-encode special characters.
+
+## SSH Key
+
+Create a deploy key on your local machine:
+
+```bash
+ssh-keygen -t ed25519 -C "binfinbot-deploy" -f binfinbot_deploy_key
+```
+
+Add the public key to the server user:
+
+```bash
+cat binfinbot_deploy_key.pub
+```
+
+Put that line into:
+
+```text
+/home/deploy/.ssh/authorized_keys
+```
+
+Add the private key content to GitHub Secret:
+
+```text
+DEPLOY_SSH_KEY
+```
+
+## Manual Start
+
+Manual start is useful for first server validation. After GitHub Actions has
+deployed the files once, run:
 
 Start Postgres and the bot:
 
@@ -97,13 +148,15 @@ docker compose run --rm bot python -m unittest
 
 ## Update Deploy
 
-Pull changes and rebuild:
+Push to `main`. GitHub Actions will run CI and then deploy by SSH:
 
-```bash
-git pull
-docker compose up -d --build
-docker compose logs -f bot
+```text
+CI: ruff, compileall, unittest
+CD: upload source, write .env, docker compose up -d --build
 ```
+
+Manual update remains possible with `docker compose up -d --build` inside
+`DEPLOY_PATH`.
 
 ## Data
 
