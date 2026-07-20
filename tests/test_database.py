@@ -4,8 +4,16 @@ import unittest
 
 import aiosqlite
 
-from src.bot.database import ensure_user_settings, get_user_settings, init_db
-from src.market.universes import PAIR_UNIVERSE_TOP_150
+from src.bot.database import (
+    ensure_user_settings,
+    get_selected_popular_pairs,
+    get_user_popular_pair_selections,
+    get_user_settings,
+    init_db,
+    set_all_user_popular_pair_selections,
+    toggle_user_popular_pair_selection,
+)
+from src.market.universes import PAIR_UNIVERSE_TOP_150, POPULAR_30_USDT_PAIRS
 
 
 class DatabaseTests(unittest.IsolatedAsyncioTestCase):
@@ -32,6 +40,55 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(settings)
         self.assertEqual(settings.pair_universe, PAIR_UNIVERSE_TOP_150)
+
+    async def test_popular_pair_selections_default_to_all_selected(self) -> None:
+        await init_db(self.database_path)
+        await ensure_user_settings(self.database_path, telegram_user_id=123)
+
+        selections = await get_user_popular_pair_selections(
+            self.database_path,
+            telegram_user_id=123,
+        )
+        selected_pairs = await get_selected_popular_pairs(
+            self.database_path,
+            telegram_user_id=123,
+        )
+
+        self.assertEqual(len(selections), 30)
+        self.assertTrue(all(selections.values()))
+        self.assertEqual(selected_pairs, list(POPULAR_30_USDT_PAIRS))
+
+    async def test_popular_pair_selection_can_be_toggled(self) -> None:
+        await init_db(self.database_path)
+        await ensure_user_settings(self.database_path, telegram_user_id=123)
+
+        selections = await toggle_user_popular_pair_selection(
+            self.database_path,
+            telegram_user_id=123,
+            symbol="BTC/USDT",
+        )
+
+        self.assertFalse(selections["BTC/USDT"])
+        self.assertNotIn(
+            "BTC/USDT",
+            await get_selected_popular_pairs(self.database_path, telegram_user_id=123),
+        )
+
+    async def test_all_popular_pair_selections_can_be_cleared(self) -> None:
+        await init_db(self.database_path)
+        await ensure_user_settings(self.database_path, telegram_user_id=123)
+
+        selections = await set_all_user_popular_pair_selections(
+            self.database_path,
+            telegram_user_id=123,
+            selected=False,
+        )
+
+        self.assertFalse(any(selections.values()))
+        self.assertEqual(
+            await get_selected_popular_pairs(self.database_path, telegram_user_id=123),
+            [],
+        )
 
     async def _create_old_user_settings_table(self) -> None:
         async with aiosqlite.connect(self.database_path) as db:

@@ -6,8 +6,11 @@ from .database import (
     UserSettings,
     ensure_user_settings,
     format_user_settings,
+    get_user_popular_pair_selections,
     get_user_settings,
+    set_all_user_popular_pair_selections,
     toggle_user_notifications,
+    toggle_user_popular_pair_selection,
     update_user_pair_universe,
     update_user_rsi_range,
     update_user_timeframe,
@@ -17,6 +20,10 @@ from .keyboards import (
     NOTIFICATIONS_TOGGLE_CALLBACK,
     PAIR_UNIVERSE_MENU_CALLBACK,
     PAIR_UNIVERSE_VALUE_PREFIX,
+    POPULAR_PAIR_CLEAR_ALL_CALLBACK,
+    POPULAR_PAIR_SELECTIONS_CALLBACK,
+    POPULAR_PAIR_SELECT_ALL_CALLBACK,
+    POPULAR_PAIR_VALUE_PREFIX,
     RSI_MENU_CALLBACK,
     RSI_RANGE_OPTIONS,
     RSI_VALUE_PREFIX,
@@ -28,12 +35,14 @@ from .keyboards import (
     VOLUME_THRESHOLD_OPTIONS,
     VOLUME_VALUE_PREFIX,
     pair_universe_keyboard,
+    popular_pair_symbol_from_callback_value,
+    popular_pairs_keyboard,
     rsi_keyboard,
     settings_keyboard,
     timeframe_keyboard,
     volume_keyboard,
 )
-from src.market.universes import PAIR_UNIVERSE_OPTIONS
+from src.market.universes import PAIR_UNIVERSE_OPTIONS, PAIR_UNIVERSE_POPULAR_30
 
 
 router = Router()
@@ -69,6 +78,46 @@ async def _edit_settings_message(
     await callback.message.edit_text(
         format_user_settings(settings),
         reply_markup=reply_markup,
+    )
+    await callback.answer()
+
+
+async def _edit_pair_universe_message(
+    callback: CallbackQuery,
+    database_path: str,
+    settings: UserSettings,
+) -> None:
+    selections = await get_user_popular_pair_selections(
+        database_path,
+        callback.from_user.id,
+    )
+    selected_count = sum(selections.values())
+    await _edit_settings_message(
+        callback,
+        settings,
+        pair_universe_keyboard(selected_popular_pairs_count=selected_count),
+    )
+
+
+async def _edit_popular_pairs_message(
+    callback: CallbackQuery,
+    settings: UserSettings,
+    selections: dict[str, bool],
+) -> None:
+    selected_count = sum(selections.values())
+    text = (
+        f"{format_user_settings(settings)}\n\n"
+        f"Популярные пары: выбрано {selected_count}/30\n"
+        "Отметьте пары, которые нужно мониторить."
+    )
+
+    if callback.message is None:
+        await callback.answer("Настройки обновлены.")
+        return
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=popular_pairs_keyboard(selections),
     )
     await callback.answer()
 
@@ -109,7 +158,7 @@ async def handle_settings_menu(callback: CallbackQuery, database_path: str) -> N
 @router.callback_query(F.data == PAIR_UNIVERSE_MENU_CALLBACK)
 async def handle_pair_universe_menu(callback: CallbackQuery, database_path: str) -> None:
     settings = await ensure_user_settings(database_path, callback.from_user.id)
-    await _edit_settings_message(callback, settings, pair_universe_keyboard())
+    await _edit_pair_universe_message(callback, database_path, settings)
 
 
 @router.callback_query(F.data.startswith(PAIR_UNIVERSE_VALUE_PREFIX))
@@ -127,7 +176,78 @@ async def handle_pair_universe_selection(
         callback.from_user.id,
         pair_universe,
     )
+
+    if pair_universe == PAIR_UNIVERSE_POPULAR_30:
+        selections = await get_user_popular_pair_selections(
+            database_path,
+            callback.from_user.id,
+        )
+        await _edit_popular_pairs_message(callback, settings, selections)
+        return
+
     await _edit_settings_message(callback, settings, _settings_keyboard(settings))
+
+
+@router.callback_query(F.data == POPULAR_PAIR_SELECTIONS_CALLBACK)
+async def handle_popular_pair_selections(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    selections = await get_user_popular_pair_selections(
+        database_path,
+        callback.from_user.id,
+    )
+    await _edit_popular_pairs_message(callback, settings, selections)
+
+
+@router.callback_query(F.data.startswith(POPULAR_PAIR_VALUE_PREFIX))
+async def handle_popular_pair_toggle(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    pair_value = callback.data.removeprefix(POPULAR_PAIR_VALUE_PREFIX)
+    try:
+        symbol = popular_pair_symbol_from_callback_value(pair_value)
+    except ValueError:
+        await callback.answer("Неизвестная пара.", show_alert=True)
+        return
+
+    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    selections = await toggle_user_popular_pair_selection(
+        database_path,
+        callback.from_user.id,
+        symbol,
+    )
+    await _edit_popular_pairs_message(callback, settings, selections)
+
+
+@router.callback_query(F.data == POPULAR_PAIR_SELECT_ALL_CALLBACK)
+async def handle_popular_pair_select_all(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    selections = await set_all_user_popular_pair_selections(
+        database_path,
+        callback.from_user.id,
+        selected=True,
+    )
+    await _edit_popular_pairs_message(callback, settings, selections)
+
+
+@router.callback_query(F.data == POPULAR_PAIR_CLEAR_ALL_CALLBACK)
+async def handle_popular_pair_clear_all(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    selections = await set_all_user_popular_pair_selections(
+        database_path,
+        callback.from_user.id,
+        selected=False,
+    )
+    await _edit_popular_pairs_message(callback, settings, selections)
 
 
 @router.callback_query(F.data == TIMEFRAME_MENU_CALLBACK)

@@ -9,11 +9,15 @@ from datetime import UTC, datetime
 from aiogram import Bot
 
 from src.analysis.signals import evaluate_signal, format_signal_message
-from src.bot.database import UserSettings, get_notification_user_settings
+from src.bot.database import (
+    UserSettings,
+    get_notification_user_settings,
+    get_selected_popular_pairs,
+)
 from src.market.bybit_client import BybitMarketDataClient, MarketDataError
 from src.market.universes import (
+    PAIR_UNIVERSE_POPULAR_30,
     PAIR_UNIVERSE_TOP_150,
-    fixed_symbols_for_pair_universe,
     pair_universe_label,
 )
 from src.monitoring.cooldown import can_send_signal, record_signal_sent
@@ -66,7 +70,8 @@ async def run_market_monitor(
                         bot=bot,
                         database_path=database_path,
                         client=client,
-                        symbols_by_pair_universe=_symbols_by_pair_universe(
+                        symbols_by_user=await _symbols_by_user(
+                            database_path,
                             settings,
                             top_150_pairs,
                         ),
@@ -94,33 +99,37 @@ def _uses_top_150(settings: list[UserSettings]) -> bool:
     return any(item.pair_universe == PAIR_UNIVERSE_TOP_150 for item in settings)
 
 
-def _symbols_by_pair_universe(
+async def _symbols_by_user(
+    database_path: str,
     settings: list[UserSettings],
     top_150_pairs: list[str],
-) -> dict[str, list[str]]:
-    symbols_by_universe: dict[str, list[str]] = {}
-    pair_universes = {item.pair_universe for item in settings}
+) -> dict[int, set[str]]:
+    symbols_by_user: dict[int, set[str]] = {}
 
-    for pair_universe in pair_universes:
-        if pair_universe == PAIR_UNIVERSE_TOP_150:
-            symbols_by_universe[pair_universe] = top_150_pairs
+    for item in settings:
+        if item.pair_universe == PAIR_UNIVERSE_TOP_150:
+            symbols_by_user[item.telegram_user_id] = set(top_150_pairs)
             continue
 
-        fixed_symbols = fixed_symbols_for_pair_universe(pair_universe)
-        if fixed_symbols is None:
-            logger.warning("Unknown pair universe: %s", pair_universe)
+        if item.pair_universe == PAIR_UNIVERSE_POPULAR_30:
+            selected_symbols = await get_selected_popular_pairs(
+                database_path,
+                item.telegram_user_id,
+            )
+            symbols_by_user[item.telegram_user_id] = set(selected_symbols)
             continue
 
-        symbols_by_universe[pair_universe] = list(fixed_symbols)
+        logger.warning("Unknown pair universe: %s", item.pair_universe)
+        symbols_by_user[item.telegram_user_id] = set()
 
-    return symbols_by_universe
+    return symbols_by_user
 
 
 async def _scan_for_signals(
     bot: Bot,
     database_path: str,
     client: BybitMarketDataClient,
-    symbols_by_pair_universe: dict[str, list[str]],
+    symbols_by_user: dict[int, set[str]],
     settings: list[UserSettings],
     ohlcv_limit: int,
     request_concurrency: int,
@@ -130,7 +139,13 @@ async def _scan_for_signals(
         settings_by_scope[(item.pair_universe, item.timeframe)].append(item)
 
     for (pair_universe, timeframe), timeframe_settings in settings_by_scope.items():
-        symbols = symbols_by_pair_universe.get(pair_universe, [])
+        symbols = sorted(
+            {
+                symbol
+                for item in timeframe_settings
+                for symbol in symbols_by_user.get(item.telegram_user_id, set())
+            }
+        )
         if not symbols:
             logger.warning(
                 "Skipping %s %s: no symbols resolved.",
@@ -154,6 +169,9 @@ async def _scan_for_signals(
                 continue
 
             for user_settings in timeframe_settings:
+                if symbol not in symbols_by_user.get(user_settings.telegram_user_id, set()):
+                    continue
+
                 result = evaluate_signal(
                     symbol=symbol,
                     exchange=user_settings.exchange,

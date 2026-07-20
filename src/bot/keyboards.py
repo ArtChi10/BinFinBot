@@ -1,16 +1,26 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.market.universes import PAIR_UNIVERSE_LABELS, pair_universe_label
+from collections.abc import Mapping
+
+from src.market.universes import (
+    PAIR_UNIVERSE_LABELS,
+    POPULAR_30_USDT_PAIRS,
+    pair_universe_label,
+)
 
 
 SETTINGS_MENU_CALLBACK = "settings:menu"
 PAIR_UNIVERSE_MENU_CALLBACK = "settings:pairs"
+POPULAR_PAIR_SELECTIONS_CALLBACK = "settings:popular_pairs"
+POPULAR_PAIR_SELECT_ALL_CALLBACK = "settings:popular_pairs:all"
+POPULAR_PAIR_CLEAR_ALL_CALLBACK = "settings:popular_pairs:none"
 TIMEFRAME_MENU_CALLBACK = "settings:timeframe"
 RSI_MENU_CALLBACK = "settings:rsi"
 VOLUME_MENU_CALLBACK = "settings:volume"
 NOTIFICATIONS_TOGGLE_CALLBACK = "settings:notifications"
 
 PAIR_UNIVERSE_VALUE_PREFIX = "settings:pairs:"
+POPULAR_PAIR_VALUE_PREFIX = "settings:popular_pair:"
 TIMEFRAME_VALUE_PREFIX = "settings:timeframe:"
 RSI_VALUE_PREFIX = "settings:rsi:"
 VOLUME_VALUE_PREFIX = "settings:volume:"
@@ -68,7 +78,7 @@ def settings_keyboard(
     )
 
 
-def pair_universe_keyboard() -> InlineKeyboardMarkup:
+def pair_universe_keyboard(selected_popular_pairs_count: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -79,8 +89,60 @@ def pair_universe_keyboard() -> InlineKeyboardMarkup:
             ]
             for pair_universe, label in PAIR_UNIVERSE_LABELS.items()
         ]
+        + [
+            [
+                InlineKeyboardButton(
+                    text=f"Настроить популярные 30 ({selected_popular_pairs_count}/30)",
+                    callback_data=POPULAR_PAIR_SELECTIONS_CALLBACK,
+                )
+            ]
+        ]
         + [_back_row()],
     )
+
+
+def popular_pairs_keyboard(
+    selections: Mapping[str, bool],
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    pairs = list(POPULAR_30_USDT_PAIRS)
+
+    for index in range(0, len(pairs), 2):
+        row = []
+        for symbol in pairs[index : index + 2]:
+            base_asset = symbol.split("/", maxsplit=1)[0]
+            marker = "[x]" if selections.get(symbol, False) else "[ ]"
+            row.append(
+                InlineKeyboardButton(
+                    text=f"{marker} {base_asset}",
+                    callback_data=f"{POPULAR_PAIR_VALUE_PREFIX}{base_asset}",
+                )
+            )
+        rows.append(row)
+
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text="Выбрать все",
+                    callback_data=POPULAR_PAIR_SELECT_ALL_CALLBACK,
+                ),
+                InlineKeyboardButton(
+                    text="Снять все",
+                    callback_data=POPULAR_PAIR_CLEAR_ALL_CALLBACK,
+                ),
+            ],
+            _back_row(callback_data=PAIR_UNIVERSE_MENU_CALLBACK),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def popular_pair_symbol_from_callback_value(value: str) -> str:
+    symbol = f"{value}/USDT"
+    if symbol not in POPULAR_30_USDT_PAIRS:
+        raise ValueError(f"Unknown popular pair callback value: {value}.")
+    return symbol
 
 
 def timeframe_keyboard() -> InlineKeyboardMarkup:
@@ -128,10 +190,12 @@ def volume_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _back_row() -> list[InlineKeyboardButton]:
+def _back_row(
+    callback_data: str = SETTINGS_MENU_CALLBACK,
+) -> list[InlineKeyboardButton]:
     return [
         InlineKeyboardButton(
             text="Назад",
-            callback_data=SETTINGS_MENU_CALLBACK,
+            callback_data=callback_data,
         )
     ]

@@ -3,7 +3,11 @@ from pathlib import Path
 
 import aiosqlite
 
-from src.market.universes import PAIR_UNIVERSE_TOP_150, pair_universe_label
+from src.market.universes import (
+    PAIR_UNIVERSE_TOP_150,
+    POPULAR_30_USDT_PAIRS,
+    pair_universe_label,
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,17 @@ CREATE TABLE IF NOT EXISTS signal_cooldowns (
 """
 
 
+CREATE_USER_POPULAR_PAIR_SELECTIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS user_popular_pair_selections (
+    telegram_user_id INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    selected INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (telegram_user_id, symbol)
+);
+"""
+
+
 CREATE_UPDATED_AT_TRIGGER_SQL = """
 CREATE TRIGGER IF NOT EXISTS user_settings_updated_at
 AFTER UPDATE ON user_settings
@@ -78,6 +93,7 @@ async def init_db(database_path: str) -> None:
         await db.execute(CREATE_USER_SETTINGS_TABLE_SQL)
         await _ensure_user_settings_columns(db)
         await db.execute(CREATE_SIGNAL_COOLDOWNS_TABLE_SQL)
+        await db.execute(CREATE_USER_POPULAR_PAIR_SELECTIONS_TABLE_SQL)
         await db.execute(CREATE_UPDATED_AT_TRIGGER_SQL)
         await db.commit()
 
@@ -112,6 +128,7 @@ async def ensure_user_settings(
                 int(DEFAULT_SETTINGS["notifications_enabled"]),
             ),
         )
+        await _ensure_popular_pair_selection_rows(db, telegram_user_id)
         await db.commit()
 
     settings = await get_user_settings(database_path, telegram_user_id)
@@ -178,6 +195,105 @@ async def get_notification_user_settings(database_path: str) -> list[UserSetting
         await cursor.close()
 
     return [_settings_from_row(row) for row in rows]
+
+
+async def get_user_popular_pair_selections(
+    database_path: str,
+    telegram_user_id: int,
+) -> dict[str, bool]:
+    await ensure_user_popular_pair_selections(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT symbol, selected
+            FROM user_popular_pair_selections
+            WHERE telegram_user_id = ?
+            """,
+            (telegram_user_id,),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+
+    selections = {str(symbol): bool(selected) for symbol, selected in rows}
+    return {
+        symbol: selections.get(symbol, True)
+        for symbol in POPULAR_30_USDT_PAIRS
+    }
+
+
+async def get_selected_popular_pairs(
+    database_path: str,
+    telegram_user_id: int,
+) -> list[str]:
+    selections = await get_user_popular_pair_selections(database_path, telegram_user_id)
+    return [
+        symbol
+        for symbol in POPULAR_30_USDT_PAIRS
+        if selections.get(symbol, False)
+    ]
+
+
+async def ensure_user_popular_pair_selections(
+    database_path: str,
+    telegram_user_id: int,
+) -> None:
+    await ensure_user_settings(database_path, telegram_user_id)
+    async with aiosqlite.connect(database_path) as db:
+        await _ensure_popular_pair_selection_rows(db, telegram_user_id)
+        await db.commit()
+
+
+async def toggle_user_popular_pair_selection(
+    database_path: str,
+    telegram_user_id: int,
+    symbol: str,
+) -> dict[str, bool]:
+    if symbol not in POPULAR_30_USDT_PAIRS:
+        raise ValueError(f"Unknown popular pair: {symbol}.")
+
+    selections = await get_user_popular_pair_selections(database_path, telegram_user_id)
+    next_selected = not selections[symbol]
+
+    async with aiosqlite.connect(database_path) as db:
+        await db.execute(
+            """
+            UPDATE user_popular_pair_selections
+            SET selected = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_user_id = ?
+              AND symbol = ?
+            """,
+            (int(next_selected), telegram_user_id, symbol),
+        )
+        await db.commit()
+
+    selections[symbol] = next_selected
+    return selections
+
+
+async def set_all_user_popular_pair_selections(
+    database_path: str,
+    telegram_user_id: int,
+    selected: bool,
+) -> dict[str, bool]:
+    await ensure_user_popular_pair_selections(database_path, telegram_user_id)
+
+    async with aiosqlite.connect(database_path) as db:
+        await db.executemany(
+            """
+            UPDATE user_popular_pair_selections
+            SET selected = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE telegram_user_id = ?
+              AND symbol = ?
+            """,
+            [
+                (int(selected), telegram_user_id, symbol)
+                for symbol in POPULAR_30_USDT_PAIRS
+            ],
+        )
+        await db.commit()
+
+    return {symbol: selected for symbol in POPULAR_30_USDT_PAIRS}
 
 
 async def update_user_timeframe(
@@ -292,6 +408,26 @@ async def _ensure_user_settings_columns(db: aiosqlite.Connection) -> None:
             ADD COLUMN pair_universe TEXT NOT NULL DEFAULT 'top_150'
             """
         )
+
+
+async def _ensure_popular_pair_selection_rows(
+    db: aiosqlite.Connection,
+    telegram_user_id: int,
+) -> None:
+    await db.executemany(
+        """
+        INSERT OR IGNORE INTO user_popular_pair_selections (
+            telegram_user_id,
+            symbol,
+            selected
+        )
+        VALUES (?, ?, 1)
+        """,
+        [
+            (telegram_user_id, symbol)
+            for symbol in POPULAR_30_USDT_PAIRS
+        ],
+    )
 
 
 def _settings_from_row(row: aiosqlite.Row) -> UserSettings:
