@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from typing import Any
 
-from .indicators import calculate_rsi, calculate_volume_change_percent
+from .indicators import (
+    calculate_price_change_percent,
+    calculate_rsi,
+    calculate_volume_change_percent,
+)
 
 
 CLOSE_INDEX = 4
@@ -15,6 +19,7 @@ class SignalResult:
     symbol: str
     exchange: str
     timeframe: str
+    price_change_percent: float | None
     volume_change_percent: float | None
     rsi: float | None
     price: float | None
@@ -43,6 +48,7 @@ def evaluate_signal(
     current_candle = candles[-1]
 
     try:
+        previous_price = _candle_value(previous_candle, CLOSE_INDEX)
         previous_volume = _candle_value(previous_candle, VOLUME_INDEX)
         current_volume = _candle_value(current_candle, VOLUME_INDEX)
         price = _candle_value(current_candle, CLOSE_INDEX)
@@ -56,6 +62,10 @@ def evaluate_signal(
             reason=f"Invalid candle format: {exc}.",
         )
 
+    price_change = calculate_price_change_percent(
+        current_price=price,
+        previous_price=previous_price,
+    )
     volume_change = calculate_volume_change_percent(
         current_volume=current_volume,
         previous_volume=previous_volume,
@@ -66,6 +76,7 @@ def evaluate_signal(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
+            price_change_percent=price_change,
             volume_change_percent=None,
             price=price,
             reason="Previous volume must be greater than zero.",
@@ -78,6 +89,7 @@ def evaluate_signal(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
+            price_change_percent=price_change,
             volume_change_percent=volume_change,
             price=price,
             reason=f"Not enough close prices to calculate RSI period {RSI_PERIOD}.",
@@ -106,6 +118,7 @@ def evaluate_signal(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
+        price_change_percent=price_change,
         volume_change_percent=volume_change,
         rsi=rsi,
         price=price,
@@ -120,7 +133,8 @@ def format_signal_message(result: SignalResult) -> str:
         f"Сигнал: {result.symbol}\n\n"
         f"Биржа: {result.exchange.capitalize()}\n"
         f"Таймфрейм: {result.timeframe}\n"
-        f"Объем: {_format_signed_percent(result.volume_change_percent)}\n"
+        f"Изменение цены: {_format_signed_percent(result.price_change_percent)}\n"
+        f"Изменение объема: {_format_signed_percent(result.volume_change_percent)}\n"
         f"RSI: {_format_number(result.rsi)}\n"
         f"Цена: {_format_number(result.price)} {quote_asset}"
     )
@@ -136,6 +150,7 @@ def _result(
     exchange: str,
     timeframe: str,
     reason: str,
+    price_change_percent: float | None = None,
     volume_change_percent: float | None = None,
     rsi: float | None = None,
     price: float | None = None,
@@ -145,6 +160,7 @@ def _result(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
+        price_change_percent=price_change_percent,
         volume_change_percent=volume_change_percent,
         rsi=rsi,
         price=price,

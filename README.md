@@ -148,6 +148,14 @@ python scripts\check_bybit_market_data.py --limit 10 --timeframe 15m --ohlcv-lim
 - RSI по close-ценам находится внутри пользовательского диапазона;
 - `volume_change_percent = 0.5` означает минимальный рост объема на `0.5%`.
 
+В уведомлении дополнительно показывается изменение цены за выбранный таймфрейм:
+
+```text
+price_change_percent = ((current_close - previous_close) / previous_close) * 100
+```
+
+Для `ETH/BTC` цена выводится в `BTC`, для `BTC/USDC` — в `USDC`, для `SOL/USDT` — в `USDT`.
+
 Проверка:
 
 ```powershell

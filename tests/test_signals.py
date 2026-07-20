@@ -37,6 +37,7 @@ class SignalTests(unittest.TestCase):
         )
 
         self.assertTrue(result.matched)
+        self.assertAlmostEqual(result.price_change_percent, 1 / 114 * 100)
         self.assertAlmostEqual(result.volume_change_percent, 1.0)
         self.assertEqual(result.price, 115)
 
@@ -132,7 +133,8 @@ class SignalTests(unittest.TestCase):
 
         self.assertIn("Сигнал: BTC/USDT", message)
         self.assertIn("Биржа: Bybit", message)
-        self.assertIn("Объем: +1.00%", message)
+        self.assertIn("Изменение цены: +0.88%", message)
+        self.assertIn("Изменение объема: +1.00%", message)
         self.assertIn("Цена: 115 USDT", message)
 
 

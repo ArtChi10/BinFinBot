@@ -11,6 +11,16 @@ def calculate_volume_change_percent(
     return ((current_volume - previous_volume) / previous_volume) * 100
 
 
+def calculate_price_change_percent(
+    current_price: float,
+    previous_price: float,
+) -> float | None:
+    if previous_price <= 0:
+        return None
+
+    return ((current_price - previous_price) / previous_price) * 100
+
+
 def calculate_rsi(closes: Sequence[float], period: int = 14) -> float | None:
     if period <= 0:
         raise ValueError("period must be greater than zero.")
