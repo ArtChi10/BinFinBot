@@ -3,11 +3,14 @@ from pathlib import Path
 
 import aiosqlite
 
+from src.market.universes import PAIR_UNIVERSE_TOP_150, pair_universe_label
+
 
 @dataclass(frozen=True)
 class UserSettings:
     telegram_user_id: int
     exchange: str
+    pair_universe: str
     timeframe: str
     volume_change_percent: float
     rsi_min: int
@@ -19,6 +22,7 @@ class UserSettings:
 
 DEFAULT_SETTINGS = {
     "exchange": "bybit",
+    "pair_universe": PAIR_UNIVERSE_TOP_150,
     "timeframe": "15m",
     "volume_change_percent": 0.5,
     "rsi_min": 60,
@@ -31,6 +35,7 @@ CREATE_USER_SETTINGS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS user_settings (
     telegram_user_id INTEGER PRIMARY KEY,
     exchange TEXT NOT NULL,
+    pair_universe TEXT NOT NULL DEFAULT 'top_150',
     timeframe TEXT NOT NULL,
     volume_change_percent REAL NOT NULL,
     rsi_min INTEGER NOT NULL,
@@ -71,6 +76,7 @@ async def init_db(database_path: str) -> None:
 
     async with aiosqlite.connect(database_path) as db:
         await db.execute(CREATE_USER_SETTINGS_TABLE_SQL)
+        await _ensure_user_settings_columns(db)
         await db.execute(CREATE_SIGNAL_COOLDOWNS_TABLE_SQL)
         await db.execute(CREATE_UPDATED_AT_TRIGGER_SQL)
         await db.commit()
@@ -86,17 +92,19 @@ async def ensure_user_settings(
             INSERT OR IGNORE INTO user_settings (
                 telegram_user_id,
                 exchange,
+                pair_universe,
                 timeframe,
                 volume_change_percent,
                 rsi_min,
                 rsi_max,
                 notifications_enabled
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 telegram_user_id,
                 DEFAULT_SETTINGS["exchange"],
+                DEFAULT_SETTINGS["pair_universe"],
                 DEFAULT_SETTINGS["timeframe"],
                 DEFAULT_SETTINGS["volume_change_percent"],
                 DEFAULT_SETTINGS["rsi_min"],
@@ -123,6 +131,7 @@ async def get_user_settings(
             SELECT
                 telegram_user_id,
                 exchange,
+                pair_universe,
                 timeframe,
                 volume_change_percent,
                 rsi_min,
@@ -152,6 +161,7 @@ async def get_notification_user_settings(database_path: str) -> list[UserSetting
             SELECT
                 telegram_user_id,
                 exchange,
+                pair_universe,
                 timeframe,
                 volume_change_percent,
                 rsi_min,
@@ -181,6 +191,21 @@ async def update_user_timeframe(
         telegram_user_id,
         "timeframe = ?",
         (timeframe,),
+    )
+    return await _get_existing_user_settings(database_path, telegram_user_id)
+
+
+async def update_user_pair_universe(
+    database_path: str,
+    telegram_user_id: int,
+    pair_universe: str,
+) -> UserSettings:
+    await ensure_user_settings(database_path, telegram_user_id)
+    await _update_user_settings(
+        database_path,
+        telegram_user_id,
+        "pair_universe = ?",
+        (pair_universe,),
     )
     return await _get_existing_user_settings(database_path, telegram_user_id)
 
@@ -254,10 +279,26 @@ async def _get_existing_user_settings(
     return settings
 
 
+async def _ensure_user_settings_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(user_settings)")
+    rows = await cursor.fetchall()
+    await cursor.close()
+
+    columns = {str(row[1]) for row in rows}
+    if "pair_universe" not in columns:
+        await db.execute(
+            """
+            ALTER TABLE user_settings
+            ADD COLUMN pair_universe TEXT NOT NULL DEFAULT 'top_150'
+            """
+        )
+
+
 def _settings_from_row(row: aiosqlite.Row) -> UserSettings:
     return UserSettings(
         telegram_user_id=int(row["telegram_user_id"]),
         exchange=str(row["exchange"]),
+        pair_universe=str(row["pair_universe"]),
         timeframe=str(row["timeframe"]),
         volume_change_percent=float(row["volume_change_percent"]),
         rsi_min=int(row["rsi_min"]),
@@ -275,6 +316,7 @@ def format_user_settings(settings: UserSettings) -> str:
     return (
         "Текущие настройки\n\n"
         f"Биржа: {exchange}\n"
+        f"Список пар: {pair_universe_label(settings.pair_universe)}\n"
         f"Таймфрейм: {settings.timeframe}\n"
         f"Минимальный рост объема: {settings.volume_change_percent:g}%\n"
         f"RSI: {settings.rsi_min}–{settings.rsi_max}\n"

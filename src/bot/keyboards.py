@@ -1,12 +1,16 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from src.market.universes import PAIR_UNIVERSE_LABELS, pair_universe_label
+
 
 SETTINGS_MENU_CALLBACK = "settings:menu"
+PAIR_UNIVERSE_MENU_CALLBACK = "settings:pairs"
 TIMEFRAME_MENU_CALLBACK = "settings:timeframe"
 RSI_MENU_CALLBACK = "settings:rsi"
 VOLUME_MENU_CALLBACK = "settings:volume"
 NOTIFICATIONS_TOGGLE_CALLBACK = "settings:notifications"
 
+PAIR_UNIVERSE_VALUE_PREFIX = "settings:pairs:"
 TIMEFRAME_VALUE_PREFIX = "settings:timeframe:"
 RSI_VALUE_PREFIX = "settings:rsi:"
 VOLUME_VALUE_PREFIX = "settings:volume:"
@@ -23,6 +27,7 @@ VOLUME_THRESHOLD_OPTIONS = (0.1, 0.25, 0.5, 1, 3, 5, 10)
 
 
 def settings_keyboard(
+    pair_universe: str,
     timeframe: str,
     rsi_min: int,
     rsi_max: int,
@@ -33,6 +38,12 @@ def settings_keyboard(
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"Пары: {pair_universe_label(pair_universe)}",
+                    callback_data=PAIR_UNIVERSE_MENU_CALLBACK,
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     text=f"Таймфрейм: {timeframe}",
@@ -54,6 +65,21 @@ def settings_keyboard(
                 ),
             ],
         ],
+    )
+
+
+def pair_universe_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f"{PAIR_UNIVERSE_VALUE_PREFIX}{pair_universe}",
+                )
+            ]
+            for pair_universe, label in PAIR_UNIVERSE_LABELS.items()
+        ]
+        + [_back_row()],
     )
 
 

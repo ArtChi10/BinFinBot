@@ -8,12 +8,15 @@ from .database import (
     format_user_settings,
     get_user_settings,
     toggle_user_notifications,
+    update_user_pair_universe,
     update_user_rsi_range,
     update_user_timeframe,
     update_user_volume_change_percent,
 )
 from .keyboards import (
     NOTIFICATIONS_TOGGLE_CALLBACK,
+    PAIR_UNIVERSE_MENU_CALLBACK,
+    PAIR_UNIVERSE_VALUE_PREFIX,
     RSI_MENU_CALLBACK,
     RSI_RANGE_OPTIONS,
     RSI_VALUE_PREFIX,
@@ -24,11 +27,13 @@ from .keyboards import (
     VOLUME_MENU_CALLBACK,
     VOLUME_THRESHOLD_OPTIONS,
     VOLUME_VALUE_PREFIX,
+    pair_universe_keyboard,
     rsi_keyboard,
     settings_keyboard,
     timeframe_keyboard,
     volume_keyboard,
 )
+from src.market.universes import PAIR_UNIVERSE_OPTIONS
 
 
 router = Router()
@@ -36,6 +41,7 @@ router = Router()
 
 def _settings_keyboard(settings: UserSettings):
     return settings_keyboard(
+        pair_universe=settings.pair_universe,
         timeframe=settings.timeframe,
         rsi_min=settings.rsi_min,
         rsi_max=settings.rsi_max,
@@ -97,6 +103,30 @@ async def handle_settings(message: Message, database_path: str) -> None:
 @router.callback_query(F.data == SETTINGS_MENU_CALLBACK)
 async def handle_settings_menu(callback: CallbackQuery, database_path: str) -> None:
     settings = await ensure_user_settings(database_path, callback.from_user.id)
+    await _edit_settings_message(callback, settings, _settings_keyboard(settings))
+
+
+@router.callback_query(F.data == PAIR_UNIVERSE_MENU_CALLBACK)
+async def handle_pair_universe_menu(callback: CallbackQuery, database_path: str) -> None:
+    settings = await ensure_user_settings(database_path, callback.from_user.id)
+    await _edit_settings_message(callback, settings, pair_universe_keyboard())
+
+
+@router.callback_query(F.data.startswith(PAIR_UNIVERSE_VALUE_PREFIX))
+async def handle_pair_universe_selection(
+    callback: CallbackQuery,
+    database_path: str,
+) -> None:
+    pair_universe = callback.data.removeprefix(PAIR_UNIVERSE_VALUE_PREFIX)
+    if pair_universe not in PAIR_UNIVERSE_OPTIONS:
+        await callback.answer("Неизвестный список пар.", show_alert=True)
+        return
+
+    settings = await update_user_pair_universe(
+        database_path,
+        callback.from_user.id,
+        pair_universe,
+    )
     await _edit_settings_message(callback, settings, _settings_keyboard(settings))
 
 

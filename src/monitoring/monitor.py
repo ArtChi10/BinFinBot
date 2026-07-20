@@ -11,6 +11,11 @@ from aiogram import Bot
 from src.analysis.signals import evaluate_signal, format_signal_message
 from src.bot.database import UserSettings, get_notification_user_settings
 from src.market.bybit_client import BybitMarketDataClient, MarketDataError
+from src.market.universes import (
+    PAIR_UNIVERSE_TOP_150,
+    fixed_symbols_for_pair_universe,
+    pair_universe_label,
+)
 from src.monitoring.cooldown import can_send_signal, record_signal_sent
 
 
@@ -40,8 +45,8 @@ async def run_market_monitor(
     request_concurrency: int = DEFAULT_REQUEST_CONCURRENCY,
 ) -> None:
     logger.info("Starting market monitor.")
-    top_pairs: list[str] = []
-    top_pairs_loaded_at = 0.0
+    top_150_pairs: list[str] = []
+    top_150_pairs_loaded_at = 0.0
 
     async with BybitMarketDataClient() as client:
         while True:
@@ -49,16 +54,22 @@ async def run_market_monitor(
                 settings = await _load_bybit_notification_settings(database_path)
                 if settings:
                     now = time.monotonic()
-                    if not top_pairs or now - top_pairs_loaded_at >= top_pairs_refresh_seconds:
-                        top_pairs = await client.get_top_usdt_pairs(limit=top_pairs_limit)
-                        top_pairs_loaded_at = now
-                        logger.info("Loaded %s top Bybit /USDT pairs.", len(top_pairs))
+                    if _uses_top_150(settings) and (
+                        not top_150_pairs
+                        or now - top_150_pairs_loaded_at >= top_pairs_refresh_seconds
+                    ):
+                        top_150_pairs = await client.get_top_usdt_pairs(limit=top_pairs_limit)
+                        top_150_pairs_loaded_at = now
+                        logger.info("Loaded %s top Bybit /USDT pairs.", len(top_150_pairs))
 
                     await _scan_for_signals(
                         bot=bot,
                         database_path=database_path,
                         client=client,
-                        top_pairs=top_pairs,
+                        symbols_by_pair_universe=_symbols_by_pair_universe(
+                            settings,
+                            top_150_pairs,
+                        ),
                         settings=settings,
                         ohlcv_limit=ohlcv_limit,
                         request_concurrency=request_concurrency,
@@ -79,23 +90,58 @@ async def _load_bybit_notification_settings(database_path: str) -> list[UserSett
     return [item for item in settings if item.exchange.lower() == "bybit"]
 
 
+def _uses_top_150(settings: list[UserSettings]) -> bool:
+    return any(item.pair_universe == PAIR_UNIVERSE_TOP_150 for item in settings)
+
+
+def _symbols_by_pair_universe(
+    settings: list[UserSettings],
+    top_150_pairs: list[str],
+) -> dict[str, list[str]]:
+    symbols_by_universe: dict[str, list[str]] = {}
+    pair_universes = {item.pair_universe for item in settings}
+
+    for pair_universe in pair_universes:
+        if pair_universe == PAIR_UNIVERSE_TOP_150:
+            symbols_by_universe[pair_universe] = top_150_pairs
+            continue
+
+        fixed_symbols = fixed_symbols_for_pair_universe(pair_universe)
+        if fixed_symbols is None:
+            logger.warning("Unknown pair universe: %s", pair_universe)
+            continue
+
+        symbols_by_universe[pair_universe] = list(fixed_symbols)
+
+    return symbols_by_universe
+
+
 async def _scan_for_signals(
     bot: Bot,
     database_path: str,
     client: BybitMarketDataClient,
-    top_pairs: list[str],
+    symbols_by_pair_universe: dict[str, list[str]],
     settings: list[UserSettings],
     ohlcv_limit: int,
     request_concurrency: int,
 ) -> None:
-    settings_by_timeframe: dict[str, list[UserSettings]] = defaultdict(list)
+    settings_by_scope: dict[tuple[str, str], list[UserSettings]] = defaultdict(list)
     for item in settings:
-        settings_by_timeframe[item.timeframe].append(item)
+        settings_by_scope[(item.pair_universe, item.timeframe)].append(item)
 
-    for timeframe, timeframe_settings in settings_by_timeframe.items():
+    for (pair_universe, timeframe), timeframe_settings in settings_by_scope.items():
+        symbols = symbols_by_pair_universe.get(pair_universe, [])
+        if not symbols:
+            logger.warning(
+                "Skipping %s %s: no symbols resolved.",
+                pair_universe_label(pair_universe),
+                timeframe,
+            )
+            continue
+
         candles_by_symbol = await _fetch_candles_for_timeframe(
             client=client,
-            symbols=top_pairs,
+            symbols=symbols,
             timeframe=timeframe,
             ohlcv_limit=ohlcv_limit,
             request_concurrency=request_concurrency,
