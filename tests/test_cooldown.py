@@ -22,6 +22,8 @@ class CooldownTests(unittest.IsolatedAsyncioTestCase):
         self._temp_dir.cleanup()
 
     def test_cooldown_seconds_follow_timeframe(self) -> None:
+        self.assertEqual(cooldown_seconds_for_timeframe("1m"), 60)
+        self.assertEqual(cooldown_seconds_for_timeframe("3m"), 180)
         self.assertEqual(cooldown_seconds_for_timeframe("5m"), 300)
         self.assertEqual(cooldown_seconds_for_timeframe("15m"), 900)
         self.assertEqual(cooldown_seconds_for_timeframe("30m"), 1800)

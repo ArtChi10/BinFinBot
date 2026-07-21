@@ -6,6 +6,8 @@ from src.bot.db_backend import connect_postgres, is_postgres_database_url
 
 
 TIMEFRAME_COOLDOWN_SECONDS = {
+    "1m": 60,
+    "3m": 3 * 60,
     "5m": 5 * 60,
     "15m": 15 * 60,
     "30m": 30 * 60,
